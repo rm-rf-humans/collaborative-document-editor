@@ -1,0 +1,97 @@
+erDiagram
+    USER ||--o{ SESSION : owns
+    USER ||--o{ DOCUMENT : creates
+    USER ||--o{ DOCUMENT_PERMISSION : receives
+    USER ||--o{ AI_INTERACTION : initiates
+    USER ||--o{ DOCUMENT_VERSION : authors
+    TEAM ||--o{ TEAM_MEMBERSHIP : contains
+    USER ||--o{ TEAM_MEMBERSHIP : joins
+    DOCUMENT ||--o{ DOCUMENT_PERMISSION : grants
+    DOCUMENT ||--o{ DOCUMENT_VERSION : records
+    DOCUMENT ||--o{ AI_INTERACTION : tracks
+    DOCUMENT ||--o{ SHARED_LINK : exposes
+    TEAM ||--o{ DOCUMENT_PERMISSION : may_receive
+
+    USER {
+        string id PK
+        string email
+        string display_name
+        string global_role
+        string tenant_id
+    }
+
+    SESSION {
+        string token PK
+        string user_id FK
+        datetime expires_at
+        string device_label
+    }
+
+    TEAM {
+        string id PK
+        string name
+        string tenant_id
+    }
+
+    TEAM_MEMBERSHIP {
+        string id PK
+        string team_id FK
+        string user_id FK
+        string team_role
+    }
+
+    DOCUMENT {
+        string id PK
+        string owner_id FK
+        string title
+        text current_content
+        int current_version
+        datetime created_at
+        datetime updated_at
+        string status
+    }
+
+    DOCUMENT_PERMISSION {
+        string id PK
+        string document_id FK
+        string principal_type
+        string principal_id
+        string role
+        bool allow_ai
+        datetime created_at
+    }
+
+    SHARED_LINK {
+        string id PK
+        string document_id FK
+        string access_token
+        string role
+        datetime expires_at
+    }
+
+    DOCUMENT_VERSION {
+        string id PK
+        string document_id FK
+        int version_number
+        text content_snapshot
+        string created_by FK
+        string reason
+        datetime created_at
+    }
+
+    AI_INTERACTION {
+        string id PK
+        string document_id FK
+        string initiated_by FK
+        string feature
+        string status
+        int selection_start
+        int selection_end
+        text source_text
+        text suggested_text
+        string prompt_template_version
+        string model
+        int quota_consumed
+        datetime created_at
+        datetime completed_at
+    }

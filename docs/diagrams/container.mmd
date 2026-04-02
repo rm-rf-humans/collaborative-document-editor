@@ -1,0 +1,26 @@
+C4Container
+    title CollabWrite Container Diagram
+
+    Person(user, "User", "Collaborator, team lead, or org admin")
+    System_Boundary(collabwrite, "CollabWrite") {
+        Container(web, "Web App", "React + Vite + TypeScript", "Rich-text editing UI, AI controls, sharing UI, version history, and presence visualization.")
+        Container(api, "Application API", "Node.js + Express + TypeScript", "REST API for auth, documents, versions, sharing, and AI orchestration.")
+        Container(realtime, "Realtime Gateway", "WebSocket hub in Node.js", "Pushes presence and shared content updates to active collaborators.")
+        Container(shared, "Shared Contracts Package", "TypeScript + Zod", "Versioned schemas, message contracts, and shared types consumed by web and API.")
+        ContainerDb(dataStore, "Document Store", "PostgreSQL in target architecture; in-memory adapter in PoC", "Documents, permissions, versions, AI interaction history, and sessions.")
+        Container(queue, "AI Job Queue", "Background worker / queue abstraction", "Decouples long-running AI tasks from synchronous API requests.")
+    }
+
+    System_Ext(identityProvider, "Identity Provider", "OIDC/SAML provider")
+    System_Ext(llmProvider, "LLM Provider", "Hosted LLM API")
+
+    Rel(user, web, "Uses", "HTTPS")
+    Rel(web, api, "CRUD, AI requests, sharing, version history", "HTTPS/JSON")
+    Rel(web, realtime, "Presence join, content updates, AI completion events", "WebSocket")
+    Rel(api, shared, "Consumes schemas and DTOs", "Workspace package")
+    Rel(web, shared, "Consumes schemas and DTOs", "Workspace package")
+    Rel(api, dataStore, "Reads/writes documents, permissions, sessions")
+    Rel(realtime, dataStore, "Reads latest content and updates collaborator counters")
+    Rel(api, queue, "Enqueues AI operations")
+    Rel(queue, llmProvider, "Invokes prompts with scoped document context")
+    Rel(api, identityProvider, "Verifies identity and tenant claims")

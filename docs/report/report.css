@@ -1,0 +1,103 @@
+@page {
+  size: A4;
+  margin: 16mm 14mm 18mm 14mm;
+}
+
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  color: #1a2423;
+  line-height: 1.45;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 980px;
+  padding: 24px;
+  background: white;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: #113331;
+  margin-top: 1.25em;
+  margin-bottom: 0.45em;
+}
+
+h1 {
+  font-size: 2rem;
+  border-bottom: 2px solid #e7d5bf;
+  padding-bottom: 0.4rem;
+}
+
+h2 {
+  font-size: 1.45rem;
+  border-left: 5px solid #ef9b59;
+  padding-left: 0.6rem;
+}
+
+h3 {
+  font-size: 1.15rem;
+}
+
+p,
+li {
+  font-size: 0.96rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.85rem 0 1.15rem;
+  font-size: 0.84rem;
+}
+
+th,
+td {
+  border: 1px solid #d8ddd8;
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #eff5f4;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+  margin: 0.9rem auto;
+  border: 1px solid #d9e3e1;
+  border-radius: 10px;
+  padding: 0.25rem;
+}
+
+pre {
+  white-space: pre-wrap;
+  background: #f6f8f8;
+  border: 1px solid #dde4e2;
+  border-radius: 12px;
+  padding: 0.9rem;
+  overflow: hidden;
+  font-size: 0.76rem;
+}
+
+code {
+  font-family: "SF Mono", "Menlo", monospace;
+}
+
+blockquote {
+  margin: 0.8rem 0;
+  padding-left: 1rem;
+  border-left: 4px solid #ef9b59;
+  color: #42514f;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid #d7dfdd;
+  margin: 1.4rem 0;
+}

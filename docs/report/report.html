@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CollabWrite Midterm Report</title>
+    <link rel="stylesheet" href="./report.css" />
+  </head>
+  <body>
+    <h1>Collaborative Document Editor with AI Writing Assistant</h1>
+<h2>Assignment 1: Requirements Engineering, Architecture, Project Management, and Proof of Concept</h2>
+<p>Prepared for the February 2026 midterm brief.<br>Project codename: <code>CollabWrite</code></p>
+<h2>1. Requirements Engineering</h2>
+<h3>1.1 Stakeholder Analysis</h3>
+<table>
+<thead>
+<tr>
+<th>Stakeholder</th>
+<th>Goals</th>
+<th>Concerns</th>
+<th>Influence on Requirements</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Organization administrators</td>
+<td>Enforce tenant policy, control AI access, manage compliance and retention</td>
+<td>Data leakage to third-party LLMs, over-permissive sharing, lack of auditability</td>
+<td>Drives role model, AI policy controls, session controls, and retention requirements</td>
+</tr>
+<tr>
+<td>Team leads / document owners</td>
+<td>Coordinate contributors, preserve quality, review changes, recover from mistakes</td>
+<td>Unclear ownership, accidental overwrites, weak version history, no accountability for AI edits</td>
+<td>Drives versioning, revert workflows, tracked AI interactions, and owner-only sharing controls</td>
+</tr>
+<tr>
+<td>Security / compliance reviewers</td>
+<td>Ensure sensitive content is protected at rest, in transit, and during AI processing</td>
+<td>Prompt data exposure, insufficient encryption, uncontrolled logging, long retention windows</td>
+<td>Drives security and privacy NFRs, AI data minimization, and retention policy design</td>
+</tr>
+<tr>
+<td>AI operations / product managers</td>
+<td>Deliver useful, predictable AI assistance within budget</td>
+<td>Cost spikes, long response times, irrelevant context, model drift</td>
+<td>Drives async AI orchestration, scoped context, quotas, prompt versioning, and graceful degradation</td>
+</tr>
+<tr>
+<td>Developers / maintainers</td>
+<td>Build features in parallel, keep contracts stable, test safely</td>
+<td>Tight coupling between web and API, schema drift, merge conflicts across features</td>
+<td>Drives monorepo choice, shared contract package, ADRs, module decomposition, and testing strategy</td>
+</tr>
+<tr>
+<td>Customer support / success teams</td>
+<td>Diagnose access issues and explain document history to customers</td>
+<td>No reproducible audit trail, weak observability, unclear role behavior</td>
+<td>Drives explicit error codes, AI interaction history, and clear sharing/role semantics</td>
+</tr>
+</tbody></table>
+<h3>1.2 Functional Requirements</h3>
+<h4>Real-Time Collaboration</h4>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Level</th>
+<th>Description</th>
+<th>Trigger</th>
+<th>Expected System Behavior</th>
+<th>Acceptance Criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>COLL-1</td>
+<td>Capability</td>
+<td>The system shall support synchronous multi-user editing of the same document.</td>
+<td>Two or more authorized collaborators open the same document.</td>
+<td>The system establishes a shared editing session and keeps participants on the latest committed content version.</td>
+<td>Two browsers connected to the same document see the same latest content after each committed update.</td>
+</tr>
+<tr>
+<td>COLL-1.1</td>
+<td>Sub-requirement</td>
+<td>The system shall propagate collaborator edits to active participants through push-based communication.</td>
+<td>An editor submits a live document change.</td>
+<td>The server validates access, stores the new content, increments the version, and broadcasts the update to the session.</td>
+<td>An edit made by User A appears for User B without page refresh and includes an updated version number.</td>
+</tr>
+<tr>
+<td>COLL-1.2</td>
+<td>Sub-requirement</td>
+<td>The system shall expose presence awareness showing who is currently in the document and each user’s latest cursor index.</td>
+<td>A participant joins, leaves, or moves their cursor.</td>
+<td>The system updates session presence and broadcasts the current participant list.</td>
+<td>Active participants can identify who is online and see cursor positions update in the shared session.</td>
+</tr>
+<tr>
+<td>COLL-1.3</td>
+<td>Sub-requirement</td>
+<td>The system shall detect stale edits and prevent silent overwrite when a change is based on an out-of-date version.</td>
+<td>A client submits an edit with a stale base version.</td>
+<td>The server rejects the mutation, returns a conflict error, and the client refreshes to the latest snapshot.</td>
+<td>A stale update returns <code>VERSION_CONFLICT</code> and the client can recover by reloading the latest state.</td>
+</tr>
+</tbody></table>
+<h4>AI Writing Assistant</h4>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Level</th>
+<th>Description</th>
+<th>Trigger</th>
+<th>Expected System Behavior</th>
+<th>Acceptance Criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>AI-1</td>
+<td>Capability</td>
+<td>The system shall provide role-aware AI assistance for rewriting, summarizing, translating, and restructuring selected text.</td>
+<td>An authorized user invokes an AI feature.</td>
+<td>The system validates AI permissions, captures scoped context, records the request, and returns a suggestion asynchronously.</td>
+<td>An authorized user can request any supported AI feature and receive a persisted suggestion record.</td>
+</tr>
+<tr>
+<td>AI-1.1</td>
+<td>Sub-requirement</td>
+<td>The system shall invoke AI against the user’s explicit selection range rather than defaulting to the full document.</td>
+<td>A user highlights text and clicks an AI action.</td>
+<td>The server extracts the selected content and stores the selection metadata with the interaction.</td>
+<td>The persisted AI interaction includes <code>selection.start</code>, <code>selection.end</code>, and the captured source text.</td>
+</tr>
+<tr>
+<td>AI-1.2</td>
+<td>Sub-requirement</td>
+<td>The system shall present AI output as a proposal rather than mutating the document immediately.</td>
+<td>An AI job completes.</td>
+<td>The client receives a completed suggestion event and displays the proposed text in the AI panel.</td>
+<td>The document content remains unchanged until the user explicitly applies the suggestion.</td>
+</tr>
+<tr>
+<td>AI-1.3</td>
+<td>Sub-requirement</td>
+<td>The system shall let users apply or reject completed AI suggestions and record the resulting status.</td>
+<td>A user clicks apply or reject on a completed suggestion.</td>
+<td>The system updates the interaction status to <code>applied</code>, <code>partially_applied</code>, or <code>rejected</code>, and versions the document if content changes.</td>
+<td>Applying a suggestion creates a new document version; rejecting it updates the interaction without changing content.</td>
+</tr>
+</tbody></table>
+<h4>Document Management</h4>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Level</th>
+<th>Description</th>
+<th>Trigger</th>
+<th>Expected System Behavior</th>
+<th>Acceptance Criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DOC-1</td>
+<td>Capability</td>
+<td>The system shall manage the full document lifecycle including creation, loading, versioning, sharing, and export readiness.</td>
+<td>A user creates, opens, shares, or revisits a document.</td>
+<td>The system persists the document aggregate and enforces its access policy consistently.</td>
+<td>Authorized users can create and reopen documents; unauthorized users cannot access them.</td>
+</tr>
+<tr>
+<td>DOC-1.1</td>
+<td>Sub-requirement</td>
+<td>The system shall allow authorized users to create and load documents through concrete API contracts.</td>
+<td>A user submits a new document or opens an existing one.</td>
+<td>The API returns structured document data matching the shared schema.</td>
+<td><code>POST /v1/documents</code> returns a document with ID, timestamps, permissions, versions, and AI history arrays.</td>
+</tr>
+<tr>
+<td>DOC-1.2</td>
+<td>Sub-requirement</td>
+<td>The system shall maintain a version history for every persisted content mutation.</td>
+<td>A document is edited, reverted, or updated through AI apply.</td>
+<td>The server stores a new immutable version record with author, reason, and timestamp.</td>
+<td><code>GET /v1/documents/:id/versions</code> returns the ordered version history including reason metadata.</td>
+</tr>
+<tr>
+<td>DOC-1.3</td>
+<td>Sub-requirement</td>
+<td>The system shall allow owners to share a document with role-specific permissions and AI enablement flags.</td>
+<td>An owner updates sharing settings.</td>
+<td>The server updates or creates a permission grant for the selected principal.</td>
+<td>A share request changes the target principal’s role and AI access without affecting other grants.</td>
+</tr>
+<tr>
+<td>DOC-1.4</td>
+<td>Sub-requirement</td>
+<td>The system shall support export to PDF, DOCX, and Markdown in the target architecture.</td>
+<td>A user chooses an export format.</td>
+<td>The system produces a point-in-time document snapshot in the requested format.</td>
+<td>Export requests produce a downloadable artifact with the selected version and optional tracked AI changes.</td>
+</tr>
+</tbody></table>
+<h4>User Management</h4>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Level</th>
+<th>Description</th>
+<th>Trigger</th>
+<th>Expected System Behavior</th>
+<th>Acceptance Criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>USER-1</td>
+<td>Capability</td>
+<td>The system shall authenticate users, maintain sessions, and enforce role-based authorization at the document level.</td>
+<td>A user logs in or attempts a protected action.</td>
+<td>The system resolves the caller identity, session, and document-specific permission before executing the request.</td>
+<td>Protected endpoints reject missing or invalid sessions with <code>UNAUTHORIZED</code> or <code>FORBIDDEN</code>.</td>
+</tr>
+<tr>
+<td>USER-1.1</td>
+<td>Sub-requirement</td>
+<td>The system shall create time-bounded sessions after successful authentication.</td>
+<td>A valid user logs in.</td>
+<td>The system issues a session token with an expiry timestamp and binds it to the user.</td>
+<td><code>POST /v1/auth/login</code> returns a token, user ID, and expiry timestamp.</td>
+</tr>
+<tr>
+<td>USER-1.2</td>
+<td>Sub-requirement</td>
+<td>The system shall enforce the roles <code>owner</code>, <code>editor</code>, <code>commenter</code>, and <code>viewer</code> with different action permissions.</td>
+<td>A user attempts to edit, revert, share, or invoke AI.</td>
+<td>The policy layer checks the caller’s role and AI flag before allowing the action.</td>
+<td>Viewers cannot edit, commenters cannot mutate content, and only owners can change sharing.</td>
+</tr>
+<tr>
+<td>USER-1.3</td>
+<td>Sub-requirement</td>
+<td>The system shall make AI access independently configurable from edit permissions.</td>
+<td>An owner or admin changes document AI policy.</td>
+<td>The permission grant stores <code>allowAi</code> separately from the document role.</td>
+<td>A commenter with <code>allowAi=true</code> can request AI suggestions while remaining unable to edit document content directly.</td>
+</tr>
+</tbody></table>
+<h3>1.3 Non-Functional Requirements</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Attribute</th>
+<th>Measurable Requirement</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>NFR-LAT-1</td>
+<td>Latency</td>
+<td>Keystroke propagation between active collaborators shall be visible within 250 ms p95 inside the same region.</td>
+<td>Longer delay breaks the feeling of co-presence and makes simultaneous editing feel unsafe.</td>
+</tr>
+<tr>
+<td>NFR-LAT-2</td>
+<td>Latency</td>
+<td>AI response initiation shall return an accepted request or quota/error result within 1.5 s p95.</td>
+<td>Users should know quickly whether the AI request is queued, denied, or failed.</td>
+</tr>
+<tr>
+<td>NFR-LAT-3</td>
+<td>Latency</td>
+<td>Opening a document under 1 MB shall show the first interactive editor state within 2.0 s p95 on broadband.</td>
+<td>Shared editing must feel immediate enough for drafting sessions and classroom demos.</td>
+</tr>
+<tr>
+<td>NFR-SCALE-1</td>
+<td>Scalability</td>
+<td>The target architecture shall support 50 concurrent editors per document. The PoC proves the API/contract shape, not that scale target.</td>
+<td>Shared planning docs often involve large workshops or review sessions.</td>
+</tr>
+<tr>
+<td>NFR-SCALE-2</td>
+<td>Scalability</td>
+<td>The target architecture shall support 25,000 concurrently open documents system-wide and horizontal growth of stateless web/API nodes.</td>
+<td>Growth should come from adding nodes instead of re-architecting session flow.</td>
+</tr>
+<tr>
+<td>NFR-AVL-1</td>
+<td>Availability</td>
+<td>Target service availability shall be 99.9% monthly excluding planned maintenance.</td>
+<td>The product is a collaboration tool and should be dependable during working hours.</td>
+</tr>
+<tr>
+<td>NFR-AVL-2</td>
+<td>Availability</td>
+<td>During partial AI service outage, core editing, sharing, and version history shall remain available, while AI actions degrade to retryable errors.</td>
+<td>AI is important but must not take down the editor itself.</td>
+</tr>
+<tr>
+<td>NFR-SEC-1</td>
+<td>Security &amp; Privacy</td>
+<td>All traffic shall use TLS in transit, and document content plus AI logs shall be encrypted at rest in the production architecture.</td>
+<td>Documents may contain sensitive project plans, legal drafts, or internal strategy.</td>
+</tr>
+<tr>
+<td>NFR-SEC-2</td>
+<td>Security &amp; Privacy</td>
+<td>AI requests shall send only the minimum scoped text and prompt metadata required for the feature; default retention for raw AI logs shall not exceed 30 days.</td>
+<td>Minimizing third-party exposure reduces compliance risk and cost.</td>
+</tr>
+<tr>
+<td>NFR-SEC-3</td>
+<td>Security &amp; Privacy</td>
+<td>Secrets, API keys, and database credentials shall never be committed to source control and must be injected through environment configuration.</td>
+<td>This is a baseline control and also essential for student-team collaboration.</td>
+</tr>
+<tr>
+<td>NFR-USAB-1</td>
+<td>Usability</td>
+<td>When a large document has many active collaborators, the UI shall collapse detailed cursor data into a summarized presence bar after 10 visible users.</td>
+<td>The editor must remain readable rather than overwhelmed by indicators.</td>
+</tr>
+<tr>
+<td>NFR-USAB-2</td>
+<td>Usability</td>
+<td>The web client shall satisfy WCAG 2.1 AA contrast for primary text and interactive controls and remain usable by keyboard alone.</td>
+<td>Collaboration tools are used across varied devices and accessibility needs.</td>
+</tr>
+</tbody></table>
+<h3>1.4 User Stories and Scenarios</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>User Story</th>
+<th>Expected Behavior / Design Choice</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>US-01</td>
+<td>As an editor, I want my changes to appear for collaborators while I type so that we can draft together.</td>
+<td>Live changes travel over the real-time session and update the shared version immediately after validation.</td>
+</tr>
+<tr>
+<td>US-02</td>
+<td>As an editor, I want to recover gracefully if someone else changed the same paragraph before my update landed.</td>
+<td>The client receives <code>VERSION_CONFLICT</code>, reloads the latest snapshot, and the user can continue from the current shared state.</td>
+</tr>
+<tr>
+<td>US-03</td>
+<td>As a collaborator, I want to see who is online and where their cursor is so that coordination feels natural.</td>
+<td>Presence pills show active users and their latest cursor index in the current document.</td>
+</tr>
+<tr>
+<td>US-04</td>
+<td>As a user who went offline mid-edit, I want the session to reconnect automatically when connectivity returns.</td>
+<td>The client re-establishes the WebSocket session, reloads the latest document snapshot, and rejoins presence.</td>
+</tr>
+<tr>
+<td>US-05</td>
+<td>As a writer, I want to select a paragraph and ask the AI for a summary so that I can create an executive brief quickly.</td>
+<td>AI requests are scoped to the selection and returned as proposals in the side panel.</td>
+</tr>
+<tr>
+<td>US-06</td>
+<td>As a writer, I want to translate a section into another language so that I can prepare localized versions of the draft.</td>
+<td>The translation request includes the target language and returns a persisted suggestion for later apply or reject.</td>
+</tr>
+<tr>
+<td>US-07</td>
+<td>As a writer, I want to partially accept an AI-generated rewrite so that I stay in control of the final phrasing.</td>
+<td>The target architecture supports partial merge and records <code>partially_applied</code>; the PoC exposes full apply and the supporting status model.</td>
+</tr>
+<tr>
+<td>US-08</td>
+<td>As a team lead, I want to revert a document to a previous version while others are editing so that I can undo a bad change quickly.</td>
+<td>Revert creates a new top-of-history version rather than deleting history, and the resulting content is pushed to active collaborators.</td>
+</tr>
+<tr>
+<td>US-09</td>
+<td>As a document owner, I want to share a document with read-only access so that stakeholders can review without changing content.</td>
+<td>Sharing creates or updates a permission grant with role <code>viewer</code>.</td>
+</tr>
+<tr>
+<td>US-10</td>
+<td>As a team lead, I want to review AI interaction history so that I understand how a section evolved.</td>
+<td>AI requests and their statuses remain attached to the document for later inspection.</td>
+</tr>
+<tr>
+<td>US-11</td>
+<td>As a commenter, I want to invoke AI without editing the raw document so that I can propose wording changes safely.</td>
+<td>AI access is separated from edit access through the <code>allowAi</code> flag.</td>
+</tr>
+<tr>
+<td>US-12</td>
+<td>As a viewer, I want the UI to stop me from editing gracefully so that I understand my role without trial-and-error.</td>
+<td>The editor becomes read-only and the UI explains why content is locked.</td>
+</tr>
+</tbody></table>
+<h3>1.5 Requirements Traceability Matrix</h3>
+<table>
+<thead>
+<tr>
+<th>User Story</th>
+<th>Functional Requirements</th>
+<th>Architecture Components</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>US-01</td>
+<td>COLL-1, COLL-1.1</td>
+<td>Web App Editor, Realtime Gateway, Document Service</td>
+</tr>
+<tr>
+<td>US-02</td>
+<td>COLL-1.3, DOC-1.2</td>
+<td>Web App Editor, Realtime Gateway, Document Service, Document Store</td>
+</tr>
+<tr>
+<td>US-03</td>
+<td>COLL-1.2</td>
+<td>Web App Presence UI, Realtime Gateway</td>
+</tr>
+<tr>
+<td>US-04</td>
+<td>COLL-1, USER-1.1</td>
+<td>Web App Session Manager, Realtime Gateway, Auth Middleware</td>
+</tr>
+<tr>
+<td>US-05</td>
+<td>AI-1, AI-1.1, AI-1.2</td>
+<td>Web App AI Panel, Application API, AI Orchestrator</td>
+</tr>
+<tr>
+<td>US-06</td>
+<td>AI-1, AI-1.1</td>
+<td>Web App AI Panel, Application API, AI Orchestrator</td>
+</tr>
+<tr>
+<td>US-07</td>
+<td>AI-1.3, DOC-1.2</td>
+<td>Web App AI Panel, Document Service, Document Store</td>
+</tr>
+<tr>
+<td>US-08</td>
+<td>DOC-1.2, COLL-1.1</td>
+<td>Version History UI, Application API, Document Service, Realtime Gateway</td>
+</tr>
+<tr>
+<td>US-09</td>
+<td>DOC-1.3, USER-1.2</td>
+<td>Sharing UI, Application API, Permission Policy</td>
+</tr>
+<tr>
+<td>US-10</td>
+<td>AI-1.3, DOC-1.2</td>
+<td>AI History Panel, Document Store, Application API</td>
+</tr>
+<tr>
+<td>US-11</td>
+<td>USER-1.3, AI-1</td>
+<td>Permission Policy, AI Orchestrator, Web App AI Panel</td>
+</tr>
+<tr>
+<td>US-12</td>
+<td>USER-1.2</td>
+<td>Web App Editor, Permission Policy</td>
+</tr>
+</tbody></table>
+<h2>2. System Architecture</h2>
+<h3>2.1 Architectural Drivers</h3>
+<table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Driver</th>
+<th>Why It Dominates the Design</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Low-latency collaborative editing</td>
+<td>The core product fails if shared edits feel slow or unsafe. This drove the push-based real-time channel and explicit version conflict handling.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Security and privacy of document content</td>
+<td>Sensitive text plus third-party LLM processing requires scoped context, role checks, and audit-friendly data models.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Predictable AI user experience</td>
+<td>AI is a product feature, not a novelty. Suggestions must be proposals, async, role-aware, and undoable through version history.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Modularity for team parallelism</td>
+<td>Frontend, backend, contracts, and AI flows need clean boundaries so multiple developers can work safely in parallel.</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Auditability and recovery</td>
+<td>Version history and AI interaction records are essential because collaborative writing regularly needs rollback and explanation.</td>
+</tr>
+</tbody></table>
+<p>If the ranking changed, the architecture would change. For example, if cost minimization outranked collaboration latency, we would likely prefer heavier polling, reduced presence detail, and more batched AI flows. Instead, the design spends complexity on WebSocket propagation and explicit proposal workflows because user trust in collaboration is the primary driver.</p>
+<h3>2.2 System Design Using the C4 Model</h3>
+<h4>Level 1: System Context</h4>
+<p><img src="../diagrams/rendered/system-context.svg" alt="System Context"></p>
+<p>The system context shows <code>CollabWrite</code> as the central system sitting between three human actor categories and three external systems. The most important external boundary is the LLM provider because it introduces latency, privacy, and cost trade-offs. Identity is modeled externally as well so authentication remains replaceable without changing document-domain logic.</p>
+<pre><code class="language-mermaid">C4Context
+    title CollabWrite System Context
+
+    Person(collaborator, &quot;Collaborator&quot;, &quot;Creates and edits shared documents, reviews AI suggestions, and participates in live sessions.&quot;)
+    Person(teamLead, &quot;Team Lead&quot;, &quot;Reviews version history, governs sharing, and audits AI-assisted changes.&quot;)
+    Person(orgAdmin, &quot;Organization Admin&quot;, &quot;Configures tenant policies, AI access defaults, and compliance settings.&quot;)
+    System(collabwrite, &quot;CollabWrite&quot;, &quot;Collaborative document editor with real-time editing, role-aware sharing, and AI writing assistance.&quot;)
+    System_Ext(identityProvider, &quot;Identity Provider&quot;, &quot;Issues user identities and organization membership claims.&quot;)
+    System_Ext(llmProvider, &quot;LLM Provider&quot;, &quot;Processes rewrite, summarize, translate, and restructure prompts.&quot;)
+    System_Ext(exportTargets, &quot;Export Targets&quot;, &quot;PDF, DOCX, and Markdown export consumers.&quot;)
+
+    Rel(collaborator, collabwrite, &quot;Edits documents, views presence, requests AI suggestions&quot;)
+    Rel(teamLead, collabwrite, &quot;Reviews documents, reverts versions, manages sharing&quot;)
+    Rel(orgAdmin, collabwrite, &quot;Manages AI policy and access governance&quot;)
+    Rel(collabwrite, identityProvider, &quot;Authenticates users and resolves tenant identity&quot;)
+    Rel(collabwrite, llmProvider, &quot;Sends scoped document context for AI operations&quot;)
+    Rel(collabwrite, exportTargets, &quot;Exports document snapshots and tracked suggestions&quot;)
+</code></pre>
+<h4>Level 2: Container Diagram</h4>
+<p><img src="../diagrams/rendered/container.svg" alt="Container Diagram"></p>
+<p>The container design separates the web client from the REST API and the real-time gateway. In the PoC, the REST API and WebSocket gateway run in the same Node.js process but remain distinct containers logically because they solve different problems and will scale differently later. The shared contract package is included explicitly because it is a first-class architectural mechanism used to prevent schema drift across teams.</p>
+<pre><code class="language-mermaid">C4Container
+    title CollabWrite Container Diagram
+
+    Person(user, &quot;User&quot;, &quot;Collaborator, team lead, or org admin&quot;)
+    System_Boundary(collabwrite, &quot;CollabWrite&quot;) {
+        Container(web, &quot;Web App&quot;, &quot;React + Vite + TypeScript&quot;, &quot;Rich-text editing UI, AI controls, sharing UI, version history, and presence visualization.&quot;)
+        Container(api, &quot;Application API&quot;, &quot;Node.js + Express + TypeScript&quot;, &quot;REST API for auth, documents, versions, sharing, and AI orchestration.&quot;)
+        Container(realtime, &quot;Realtime Gateway&quot;, &quot;WebSocket hub in Node.js&quot;, &quot;Pushes presence and shared content updates to active collaborators.&quot;)
+        Container(shared, &quot;Shared Contracts Package&quot;, &quot;TypeScript + Zod&quot;, &quot;Versioned schemas, message contracts, and shared types consumed by web and API.&quot;)
+        ContainerDb(dataStore, &quot;Document Store&quot;, &quot;PostgreSQL in target architecture; in-memory adapter in PoC&quot;, &quot;Documents, permissions, versions, AI interaction history, and sessions.&quot;)
+        Container(queue, &quot;AI Job Queue&quot;, &quot;Background worker / queue abstraction&quot;, &quot;Decouples long-running AI tasks from synchronous API requests.&quot;)
+    }
+
+    System_Ext(identityProvider, &quot;Identity Provider&quot;, &quot;OIDC/SAML provider&quot;)
+    System_Ext(llmProvider, &quot;LLM Provider&quot;, &quot;Hosted LLM API&quot;)
+
+    Rel(user, web, &quot;Uses&quot;, &quot;HTTPS&quot;)
+    Rel(web, api, &quot;CRUD, AI requests, sharing, version history&quot;, &quot;HTTPS/JSON&quot;)
+    Rel(web, realtime, &quot;Presence join, content updates, AI completion events&quot;, &quot;WebSocket&quot;)
+    Rel(api, shared, &quot;Consumes schemas and DTOs&quot;, &quot;Workspace package&quot;)
+    Rel(web, shared, &quot;Consumes schemas and DTOs&quot;, &quot;Workspace package&quot;)
+    Rel(api, dataStore, &quot;Reads/writes documents, permissions, sessions&quot;)
+    Rel(realtime, dataStore, &quot;Reads latest content and updates collaborator counters&quot;)
+    Rel(api, queue, &quot;Enqueues AI operations&quot;)
+    Rel(queue, llmProvider, &quot;Invokes prompts with scoped document context&quot;)
+    Rel(api, identityProvider, &quot;Verifies identity and tenant claims&quot;)
+</code></pre>
+<h4>Level 3: Component Diagram for the Application API</h4>
+<p><img src="../diagrams/rendered/backend-components.svg" alt="Backend Components"></p>
+<p>The application API container is the best Level 3 candidate because it contains most of the business rules: authorization, versioning, AI orchestration, and contract validation. The PoC implementation mirrors this decomposition through route modules, services, a collaboration hub, and an in-memory repository adapter.</p>
+<pre><code class="language-mermaid">C4Component
+    title CollabWrite Application API Components
+
+    Container_Boundary(api, &quot;Application API&quot;) {
+        Component(restRoutes, &quot;REST Routes&quot;, &quot;Express routers&quot;, &quot;Owns HTTP contracts for auth, documents, versions, sharing, and AI operations.&quot;)
+        Component(authMiddleware, &quot;Auth Middleware&quot;, &quot;Bearer-token session resolver&quot;, &quot;Authenticates requests and attaches caller context.&quot;)
+        Component(documentService, &quot;Document Service&quot;, &quot;Domain service&quot;, &quot;Applies document mutations, versioning, sharing rules, and AI suggestion application.&quot;)
+        Component(policyEngine, &quot;Permission Policy&quot;, &quot;Role + AI gating rules&quot;, &quot;Determines whether a user may read, edit, share, revert, or invoke AI.&quot;)
+        Component(aiOrchestrator, &quot;AI Orchestrator&quot;, &quot;Async suggestion workflow&quot;, &quot;Queues AI work, selects prompt templates, and publishes completed suggestions.&quot;)
+        Component(realtimeHub, &quot;Collaboration Hub&quot;, &quot;WebSocket broadcaster&quot;, &quot;Tracks presence, propagates shared edits, and emits AI completion events.&quot;)
+        Component(documentRepository, &quot;Document Repository&quot;, &quot;Repository adapter&quot;, &quot;Persists documents, sessions, versions, permissions, and AI history.&quot;)
+        Component(sharedContracts, &quot;Shared Contracts&quot;, &quot;Zod DTO package&quot;, &quot;Runtime validation and shared request/response schemas.&quot;)
+    }
+
+    Rel(restRoutes, authMiddleware, &quot;Uses&quot;)
+    Rel(restRoutes, documentService, &quot;Calls&quot;)
+    Rel(restRoutes, aiOrchestrator, &quot;Calls&quot;)
+    Rel(documentService, policyEngine, &quot;Evaluates access rules&quot;)
+    Rel(documentService, documentRepository, &quot;Reads/writes aggregates&quot;)
+    Rel(aiOrchestrator, documentService, &quot;Reads scoped content and records interactions&quot;)
+    Rel(aiOrchestrator, documentRepository, &quot;Persists queued/completed AI work&quot;)
+    Rel(realtimeHub, documentService, &quot;Applies live edits and reads snapshots&quot;)
+    Rel(restRoutes, realtimeHub, &quot;Pushes non-socket mutations to active collaborators&quot;)
+    Rel(restRoutes, sharedContracts, &quot;Validates payloads&quot;)
+</code></pre>
+<h4>Feature Decomposition</h4>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+<th>Depends On</th>
+<th>Exposes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Web editor module</td>
+<td>Owns text editing UX, selection capture, document switching, and read-only behavior by role</td>
+<td>Shared contracts, REST API, realtime gateway</td>
+<td><code>DocumentView</code>, <code>SelectionRange</code>, editor events</td>
+</tr>
+<tr>
+<td>Frontend collaboration state</td>
+<td>Tracks current document, current version, participants, reconnect state, and AI panel state</td>
+<td>WebSocket channel, shared message schemas</td>
+<td>Presence UI, reconnect logic, socket message handlers</td>
+</tr>
+<tr>
+<td>Realtime synchronization layer</td>
+<td>Validates join context, tracks presence, applies live edits, broadcasts updates</td>
+<td>Auth service, document service, shared contracts</td>
+<td>WebSocket session <code>/ws</code>, <code>presence.*</code>, <code>document.updated</code>, <code>ai.completed</code> messages</td>
+</tr>
+<tr>
+<td>AI assistant service</td>
+<td>Persists AI interactions, scopes context, schedules async completion, enforces quota/policy</td>
+<td>Document service, repository, LLM adapter or mock adapter</td>
+<td><code>requestAi</code>, <code>completeAi</code>, suggestion lifecycle</td>
+</tr>
+<tr>
+<td>Document storage and versioning</td>
+<td>Stores document aggregate, immutable versions, permissions, and AI history</td>
+<td>Repository adapter</td>
+<td>CRUD, version history, revert, share, apply suggestion</td>
+</tr>
+<tr>
+<td>Authentication and authorization</td>
+<td>Resolves session tokens and enforces role rules plus <code>allowAi</code></td>
+<td>Session store, permission grants</td>
+<td>Auth middleware, login endpoint, access decisions</td>
+</tr>
+<tr>
+<td>Shared contract package</td>
+<td>Maintains request/response/message schemas for web and API</td>
+<td>Zod, TypeScript</td>
+<td><code>@midterm/shared</code> DTOs and runtime parsers</td>
+</tr>
+</tbody></table>
+<h4>AI Integration Design</h4>
+<h5>Context and Scope</h5>
+<p>AI sees the explicit user selection by default. This choice minimizes privacy risk, reduces token cost, and improves prompt relevance. The target architecture may extend scope to “selection plus heading context” or “selection plus neighboring paragraphs” for restructure operations, but the default remains opt-in and narrow. For very long documents, the system should load only the requested segment plus lightweight structural metadata, not the full document body.</p>
+<h5>Suggestion UX</h5>
+<p>AI output is presented as a tracked proposal in the right-hand panel. This is safer than instant inline replacement because:</p>
+<ol>
+<li>It keeps authors in control.</li>
+<li>It makes AI history inspectable.</li>
+<li>It allows later support for partial merge and tracked-change export.</li>
+</ol>
+<p>The current PoC supports apply and reject. The target product also supports partial acceptance, which is already represented in the data model through <code>partially_applied</code>.</p>
+<h5>AI During Collaboration</h5>
+<p>The system does not lock the selected region during AI generation. Other edits may continue. If the user applies a completed suggestion, that application becomes a new version and is broadcast to the session like any other edit. This avoids pessimistic locking complexity while preserving recoverability through version history.</p>
+<h5>Prompt Design</h5>
+<p>Prompt logic is template-based and versioned rather than hardcoded inline in controllers. Each AI interaction records <code>promptTemplateVersion</code> so the team can compare behavior over time and revise prompts without losing traceability. In the production architecture, prompt templates live in a dedicated prompts directory and are loaded by the AI orchestration layer.</p>
+<h5>Model and Cost Strategy</h5>
+<p>The target product uses different model classes by task:</p>
+<ul>
+<li>Rewrite and restructure: higher-quality model</li>
+<li>Summarize and translation: cheaper, faster model where acceptable</li>
+<li>Rate limiting: per-user daily quota plus tenant budget caps</li>
+</ul>
+<p>When quota is exceeded, the API returns a specific <code>quota_exceeded</code> state so the client can distinguish this from a transient model error.</p>
+<h4>API Design</h4>
+<h5>API Style</h5>
+<p>The design deliberately mixes synchronous REST and asynchronous push:</p>
+<ul>
+<li>REST for CRUD, sharing, version history, login, and AI request creation because these operations are explicit, auditable, and easy to test.</li>
+<li>WebSocket for presence and live content propagation because polling would degrade collaboration UX and waste resources.</li>
+</ul>
+<h5>REST API Contract</h5>
+<table>
+<thead>
+<tr>
+<th>Interaction</th>
+<th>Method + Path</th>
+<th>Request Contract</th>
+<th>Response Contract</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Login</td>
+<td><code>POST /v1/auth/login</code></td>
+<td><code>{ userId }</code></td>
+<td><code>{ session, user }</code></td>
+<td>PoC uses seeded users; production swaps to IdP-backed login</td>
+</tr>
+<tr>
+<td>Session lookup</td>
+<td><code>GET /v1/auth/me</code></td>
+<td>Bearer token</td>
+<td><code>{ session, user }</code></td>
+<td>Validates token and refreshes client context</td>
+</tr>
+<tr>
+<td>List users</td>
+<td><code>GET /v1/users</code></td>
+<td>none</td>
+<td><code>{ users[] }</code></td>
+<td>Used for demo login and sharing UI</td>
+</tr>
+<tr>
+<td>List documents</td>
+<td><code>GET /v1/documents</code></td>
+<td>Bearer token</td>
+<td><code>{ documents[] }</code></td>
+<td>Returns only documents visible to the caller</td>
+</tr>
+<tr>
+<td>Create document</td>
+<td><code>POST /v1/documents</code></td>
+<td><code>{ title, content }</code></td>
+<td><code>{ document }</code></td>
+<td>Seeds initial owner permission and version 1</td>
+</tr>
+<tr>
+<td>Load document</td>
+<td><code>GET /v1/documents/:id</code></td>
+<td>Bearer token</td>
+<td><code>{ document }</code></td>
+<td>Returns content, permissions, versions, AI history</td>
+</tr>
+<tr>
+<td>Update content</td>
+<td><code>PUT /v1/documents/:id/content</code></td>
+<td><code>{ baseVersion, content, reason }</code></td>
+<td><code>{ document, savedVersion }</code></td>
+<td>Rejects stale base version</td>
+</tr>
+<tr>
+<td>List versions</td>
+<td><code>GET /v1/documents/:id/versions</code></td>
+<td>Bearer token</td>
+<td><code>{ versions[] }</code></td>
+<td>Ordered newest-first</td>
+</tr>
+<tr>
+<td>Revert version</td>
+<td><code>POST /v1/documents/:id/revert</code></td>
+<td><code>{ versionNumber }</code></td>
+<td><code>{ document, savedVersion }</code></td>
+<td>Creates a new top-of-history version</td>
+</tr>
+<tr>
+<td>List permissions</td>
+<td><code>GET /v1/documents/:id/permissions</code></td>
+<td>Bearer token</td>
+<td><code>{ permissions[] }</code></td>
+<td>Owner/editor use this to understand access</td>
+</tr>
+<tr>
+<td>Share document</td>
+<td><code>POST /v1/documents/:id/share</code></td>
+<td><code>{ principalType, principalId, role, allowAi }</code></td>
+<td><code>{ permissions[] }</code></td>
+<td>Owner-only</td>
+</tr>
+<tr>
+<td>List AI interactions</td>
+<td><code>GET /v1/documents/:id/ai-interactions</code></td>
+<td>Bearer token</td>
+<td><code>{ interactions[] }</code></td>
+<td>Supports audit and reload</td>
+</tr>
+<tr>
+<td>Request AI</td>
+<td><code>POST /v1/documents/:id/ai-operations</code></td>
+<td><code>{ feature, selection, targetLanguage? }</code></td>
+<td><code>{ interaction }</code></td>
+<td>Returns <code>202 Accepted</code> or <code>429</code> quota result</td>
+</tr>
+<tr>
+<td>Apply AI suggestion</td>
+<td><code>POST /v1/documents/:id/ai-interactions/:iid/apply</code></td>
+<td><code>{ mode, acceptedText? }</code></td>
+<td><code>{ document }</code></td>
+<td>Creates a new version if content changes</td>
+</tr>
+<tr>
+<td>Reject AI suggestion</td>
+<td><code>POST /v1/documents/:id/ai-interactions/:iid/reject</code></td>
+<td><code>{}</code></td>
+<td><code>{ interactions[] }</code></td>
+<td>Marks suggestion as rejected</td>
+</tr>
+</tbody></table>
+<h5>Realtime Session Contract</h5>
+<p>The client joins a document session through:</p>
+<p><code>GET ws://host/ws?token=&lt;session&gt;&amp;documentId=&lt;documentId&gt;</code></p>
+<p>Server-to-client messages:</p>
+<ul>
+<li><code>presence.snapshot</code></li>
+<li><code>presence.updated</code></li>
+<li><code>document.updated</code></li>
+<li><code>ai.completed</code></li>
+<li><code>cursor.updated</code> (reserved for future richer cursor rendering)</li>
+</ul>
+<p>Client-to-server messages:</p>
+<ul>
+<li><code>document.change</code></li>
+<li><code>cursor.change</code></li>
+</ul>
+<h5>Long-Running AI Operations</h5>
+<p>From the client perspective, AI is asynchronous:</p>
+<ol>
+<li>The client submits <code>POST /ai-operations</code>.</li>
+<li>The API immediately returns a queued interaction record.</li>
+<li>The AI worker completes later and emits <code>ai.completed</code> over WebSocket.</li>
+<li>The client updates the side panel and waits for explicit apply/reject.</li>
+</ol>
+<p>This avoids long synchronous HTTP waits and distinguishes queue acceptance from model completion.</p>
+<h5>Error Handling Strategy</h5>
+<p>Clients distinguish failure modes by explicit error codes or interaction status:</p>
+<ul>
+<li>AI slow: request accepted but interaction remains <code>queued</code> or <code>in_progress</code></li>
+<li>AI failed: interaction becomes <code>failed</code></li>
+<li>Quota exceeded: HTTP <code>429</code> with interaction status <code>quota_exceeded</code></li>
+<li>Stale edit: HTTP or socket error <code>VERSION_CONFLICT</code></li>
+<li>Unauthorized: <code>UNAUTHORIZED</code></li>
+<li>Forbidden action: <code>FORBIDDEN</code>, <code>EDIT_NOT_ALLOWED</code>, <code>SHARE_NOT_ALLOWED</code>, <code>AI_NOT_ALLOWED</code></li>
+</ul>
+<h4>Authentication and Authorization</h4>
+<p>Authentication is required because the product manages private content and document-scoped permissions. The system expects:</p>
+<ul>
+<li>regular collaborators</li>
+<li>team leads / document owners</li>
+<li>organization administrators</li>
+</ul>
+<p>Document roles:</p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Read</th>
+<th>Edit</th>
+<th>Revert</th>
+<th>Share</th>
+<th>Invoke AI</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Owner</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+<td>If <code>allowAi=true</code></td>
+</tr>
+<tr>
+<td>Commenter</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>If <code>allowAi=true</code></td>
+</tr>
+<tr>
+<td>Viewer</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No by default</td>
+</tr>
+</tbody></table>
+<p>The most important privacy consideration is third-party AI processing. The design mitigates this by sending only scoped selections, logging prompt template versions, and treating AI access as a separate policy knob.</p>
+<h4>Communication Model</h4>
+<p>The system uses a hybrid push model:</p>
+<ul>
+<li>Initial open: the client authenticates, fetches the document bundle over REST, then joins the document WebSocket room.</li>
+<li>Active editing: presence and edits propagate by push to keep latency low.</li>
+<li>Connectivity loss: the client reconnects automatically and reloads the latest snapshot before resuming edits.</li>
+</ul>
+<p>This is more complex than polling, but it aligns with the top-ranked architectural driver: low-latency collaboration.</p>
+<h3>2.3 Code Structure and Repository Organization</h3>
+<h4>Monorepo vs Multi-Repo</h4>
+<p>The project uses a monorepo. With a small student team and heavy shared DTO usage, a monorepo is the lowest-friction option because it keeps web, API, and shared contracts versioned together. A multi-repo split would create unnecessary coordination cost every time request/response schemas evolve.</p>
+<h4>Directory Layout</h4>
+<pre><code class="language-text">.
+├── apps
+│   ├── api
+│   │   └── src
+│   │       ├── middleware
+│   │       ├── realtime
+│   │       ├── repositories
+│   │       ├── routes
+│   │       ├── services
+│   │       ├── utils
+│   │       ├── app.ts
+│   │       ├── app.test.ts
+│   │       └── server.ts
+│   └── web
+│       ├── index.html
+│       └── src
+│           ├── components
+│           ├── styles
+│           ├── api.ts
+│           ├── App.tsx
+│           └── main.tsx
+├── packages
+│   └── shared
+│       └── src
+│           ├── index.ts
+│           └── index.test.ts
+├── docs
+│   ├── diagrams
+│   └── report
+├── package.json
+└── README.md
+</code></pre>
+<h4>Shared Code</h4>
+<p>Shared request/response types and runtime validation live in <code>packages/shared</code>. This package exposes Zod schemas plus inferred TypeScript types. The API uses them for runtime validation; the frontend uses them for compile-time safety and message handling.</p>
+<h4>Configuration Management</h4>
+<p>Secrets are environment-driven. The PoC only needs optional variables such as <code>VITE_API_URL</code>, but the production architecture expects LLM keys, database URLs, and session secrets to live in environment variables or a secret manager. <code>.env</code> files are gitignored and <code>.env.example</code> documents the required keys.</p>
+<h4>Testing Structure</h4>
+<p>Tests sit next to source where practical:</p>
+<ul>
+<li><code>packages/shared/src/index.test.ts</code> for contract tests</li>
+<li><code>apps/api/src/app.test.ts</code> for API integration tests</li>
+</ul>
+<p>Planned test layers:</p>
+<ul>
+<li>unit tests for prompt selection, permission policy, and merge/conflict logic</li>
+<li>integration tests for REST contracts and repository behavior</li>
+<li>end-to-end tests for multi-user collaboration and AI suggestion UX</li>
+</ul>
+<p>AI integration is tested through a deterministic mock provider so tests do not require paid API calls.</p>
+<h3>2.4 Data Model</h3>
+<p><img src="../diagrams/rendered/data-model.svg" alt="Data Model"></p>
+<p>The document aggregate stores more than content: ownership, current version, timestamps, permissions, immutable versions, and AI interaction history. That is necessary because the product needs accountability, not just raw text storage.</p>
+<pre><code class="language-mermaid">erDiagram
+    USER ||--o{ SESSION : owns
+    USER ||--o{ DOCUMENT : creates
+    USER ||--o{ DOCUMENT_PERMISSION : receives
+    USER ||--o{ AI_INTERACTION : initiates
+    USER ||--o{ DOCUMENT_VERSION : authors
+    TEAM ||--o{ TEAM_MEMBERSHIP : contains
+    USER ||--o{ TEAM_MEMBERSHIP : joins
+    DOCUMENT ||--o{ DOCUMENT_PERMISSION : grants
+    DOCUMENT ||--o{ DOCUMENT_VERSION : records
+    DOCUMENT ||--o{ AI_INTERACTION : tracks
+    DOCUMENT ||--o{ SHARED_LINK : exposes
+    TEAM ||--o{ DOCUMENT_PERMISSION : may_receive
+
+    USER {
+        string id PK
+        string email
+        string display_name
+        string global_role
+        string tenant_id
+    }
+
+    SESSION {
+        string token PK
+        string user_id FK
+        datetime expires_at
+        string device_label
+    }
+
+    TEAM {
+        string id PK
+        string name
+        string tenant_id
+    }
+
+    TEAM_MEMBERSHIP {
+        string id PK
+        string team_id FK
+        string user_id FK
+        string team_role
+    }
+
+    DOCUMENT {
+        string id PK
+        string owner_id FK
+        string title
+        text current_content
+        int current_version
+        datetime created_at
+        datetime updated_at
+        string status
+    }
+
+    DOCUMENT_PERMISSION {
+        string id PK
+        string document_id FK
+        string principal_type
+        string principal_id
+        string role
+        bool allow_ai
+        datetime created_at
+    }
+
+    SHARED_LINK {
+        string id PK
+        string document_id FK
+        string access_token
+        string role
+        datetime expires_at
+    }
+
+    DOCUMENT_VERSION {
+        string id PK
+        string document_id FK
+        int version_number
+        text content_snapshot
+        string created_by FK
+        string reason
+        datetime created_at
+    }
+
+    AI_INTERACTION {
+        string id PK
+        string document_id FK
+        string initiated_by FK
+        string feature
+        string status
+        int selection_start
+        int selection_end
+        text source_text
+        text suggested_text
+        string prompt_template_version
+        string model
+        int quota_consumed
+        datetime created_at
+        datetime completed_at
+    }
+</code></pre>
+<p>Modeling decisions:</p>
+<ul>
+<li>Version history is immutable; revert creates a new version rather than deleting old ones.</li>
+<li>AI interactions keep both source and suggested text so reviewers can compare and audit.</li>
+<li>Permissions support users, teams, and link sharing even though the PoC currently implements user principals only.</li>
+</ul>
+<h3>2.5 Architecture Decision Records (ADRs)</h3>
+<h4>ADR-01: Monorepo with Shared Contract Package</h4>
+<ul>
+<li>Title: Monorepo with <code>@midterm/shared</code></li>
+<li>Status: Accepted</li>
+<li>Context: Web, API, and realtime flows evolve together. Schema drift would slow the team and break demos.</li>
+<li>Decision: Keep frontend, backend, and shared contracts in one repository and publish DTOs through an internal workspace package.</li>
+<li>Consequences: Faster cross-layer changes, easier traceability, single CI pipeline. The trade-off is a larger repository and less independent deployment freedom.</li>
+<li>Alternatives considered: Separate repos for web and backend were rejected because every API change would require cross-repo synchronization and duplicate type definitions.</li>
+</ul>
+<h4>ADR-02: REST for CRUD + WebSocket for Collaboration</h4>
+<ul>
+<li>Title: Hybrid communication model</li>
+<li>Status: Accepted</li>
+<li>Context: The system needs both strongly testable CRUD contracts and low-latency live editing.</li>
+<li>Decision: Use REST for explicit resource operations and WebSocket for presence plus content propagation.</li>
+<li>Consequences: Better UX and clearer boundaries, at the cost of maintaining two communication paths. This complexity is justified by the top-ranked latency driver.</li>
+<li>Alternatives considered: Polling was rejected because it increases latency and server load. An all-WebSocket design was rejected because it complicates auditable CRUD and testing.</li>
+</ul>
+<h4>ADR-03: AI Suggestions Are Proposals, Not Immediate Mutations</h4>
+<ul>
+<li>Title: Proposal-based AI UX</li>
+<li>Status: Accepted</li>
+<li>Context: Direct AI mutation is fast to implement but reduces user trust and complicates collaboration recovery.</li>
+<li>Decision: AI writes suggestion records that users explicitly apply or reject.</li>
+<li>Consequences: Safer collaboration, easier auditing, clearer version history. The trade-off is one extra interaction step for the user.</li>
+<li>Alternatives considered: Instant inline replacement was rejected because it hides AI provenance and increases accidental destructive edits.</li>
+</ul>
+<h4>ADR-04: Repository Abstraction with In-Memory PoC Adapter</h4>
+<ul>
+<li>Title: PoC uses repository abstraction instead of hardwiring storage</li>
+<li>Status: Accepted</li>
+<li>Context: The assignment requires a running PoC now but the semester project will outgrow in-memory state quickly.</li>
+<li>Decision: Implement the PoC against an in-memory repository that already matches the future service and aggregate boundaries.</li>
+<li>Consequences: The demo remains lightweight while preserving clean migration paths to PostgreSQL and Redis later. The trade-off is that the PoC does not validate production persistence or multi-instance coordination yet.</li>
+<li>Alternatives considered: Hardcoding state directly inside route handlers was rejected because it would not scale architecturally or align with the report.</li>
+</ul>
+<h2>3. Project Management and Team Collaboration</h2>
+<h3>3.1 Team Structure and Ownership</h3>
+<table>
+<thead>
+<tr>
+<th>Team Member Role</th>
+<th>Ownership Area</th>
+<th>Responsibilities</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Frontend lead</td>
+<td><code>apps/web</code></td>
+<td>Editor UX, presence visualization, AI suggestion panel, accessibility</td>
+</tr>
+<tr>
+<td>Backend/API lead</td>
+<td><code>apps/api/routes</code>, <code>apps/api/services</code></td>
+<td>REST contracts, auth, sharing, versioning, API tests</td>
+</tr>
+<tr>
+<td>Collaboration/infra lead</td>
+<td><code>apps/api/realtime</code>, deployment scripts, CI</td>
+<td>Realtime session behavior, observability, environment setup</td>
+</tr>
+<tr>
+<td>AI/platform lead</td>
+<td>prompt templates, AI orchestration, quota policy, mock/real providers</td>
+<td>AI workflow, privacy minimization, prompt versioning</td>
+</tr>
+</tbody></table>
+<p>Features that span ownership, such as AI-assisted editing, are delivered through one cross-functional issue with explicit subtasks per owner and one designated integrator. Technical disagreements follow a lightweight ADR or RFC process; unresolved issues escalate to the backend/API lead plus one reviewer within 24 hours.</p>
+<h3>3.2 Development Workflow</h3>
+<ul>
+<li>Branching strategy: short-lived feature branches from <code>main</code>, named <code>feat/&lt;scope&gt;-&lt;ticket&gt;</code>, <code>fix/&lt;scope&gt;-&lt;ticket&gt;</code>, or <code>docs/&lt;scope&gt;-&lt;ticket&gt;</code>.</li>
+<li>Merge policy: pull requests only, no direct pushes to <code>main</code>, squash merge after review.</li>
+<li>Code review: at least one approving review from the owning area and one cross-area reviewer for shared contracts or cross-cutting features.</li>
+<li>Approval criteria: passing tests, no schema drift, updated docs for new endpoints, and clear rollback behavior for risky changes.</li>
+<li>Issue tracking: backlog items in GitHub Projects or Jira with labels such as <code>web</code>, <code>api</code>, <code>ai</code>, <code>realtime</code>, <code>infra</code>.</li>
+<li>Communication: Slack or Microsoft Teams for daily coordination; persistent decisions are copied into ADRs or issue comments so they do not disappear in chat history.</li>
+</ul>
+<h3>3.3 Development Methodology</h3>
+<p>The team uses a lightweight Scrum-style methodology with one-week iterations from <strong>April 5, 2026</strong> through <strong>May 24, 2026</strong>. Work is prioritized by architectural dependency first, then user-visible value:</p>
+<ol>
+<li>shared contracts and repository boundaries</li>
+<li>document CRUD and auth</li>
+<li>realtime editing and presence</li>
+<li>AI workflow and quota handling</li>
+<li>export and hardening</li>
+</ol>
+<p>Infrastructure, testing, and data-model work are tracked as first-class backlog items with acceptance criteria, not treated as side work.</p>
+<h3>3.4 Risk Assessment</h3>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Likelihood</th>
+<th>Impact</th>
+<th>Mitigation</th>
+<th>Contingency</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Real-time edit conflicts become too frequent with naive full-document updates</td>
+<td>Medium</td>
+<td>Users lose trust in collaboration and edits may be overwritten</td>
+<td>Move from full-document pushes to OT/CRDT or patch-based operations, add conflict telemetry early</td>
+<td>Freeze simultaneous same-region editing and fall back to optimistic locking plus explicit conflict resolution UI</td>
+</tr>
+<tr>
+<td>Third-party AI latency or outages degrade the whole product</td>
+<td>High</td>
+<td>AI feels broken, but editing must continue</td>
+<td>Keep AI asynchronous, decouple through queue, surface retryable states</td>
+<td>Disable AI features temporarily while preserving editing, sharing, and history</td>
+</tr>
+<tr>
+<td>AI cost grows unpredictably with large selections and repeated requests</td>
+<td>Medium</td>
+<td>Budget overrun or forced throttling</td>
+<td>Enforce scoped context, quotas, tenant budget caps, and prompt templates by feature</td>
+<td>Reduce available AI features or switch to lower-cost models for non-critical tasks</td>
+</tr>
+<tr>
+<td>Schema drift between frontend and backend breaks integration late in the sprint</td>
+<td>Medium</td>
+<td>Demo failures and lost integration time</td>
+<td>Keep shared contracts in a workspace package and test responses against schemas</td>
+<td>Temporarily freeze feature work and repair contract mismatches before resuming</td>
+</tr>
+<tr>
+<td>Ownership boundaries fail and cross-cutting features merge poorly</td>
+<td>Medium</td>
+<td>Integration stalls, PRs become large, bugs increase</td>
+<td>Use clear module ownership, small PRs, and an explicit integrator for cross-functional work</td>
+<td>Re-scope the sprint, assign one engineer to integration-only work, and defer lower-priority features</td>
+</tr>
+</tbody></table>
+<h3>3.5 Timeline and Milestones</h3>
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Milestone</th>
+<th>Acceptance Criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>April 7, 2026</td>
+<td>Contract baseline complete</td>
+<td>Shared DTO package exists; login and document CRUD schemas are agreed and reviewed.</td>
+</tr>
+<tr>
+<td>April 14, 2026</td>
+<td>Authenticated CRUD slice complete</td>
+<td>API serves document create/load/update with auth; integration tests pass.</td>
+</tr>
+<tr>
+<td>April 21, 2026</td>
+<td>Realtime collaboration slice complete</td>
+<td>Two clients can join the same document, see presence, and receive shared edits in under target demo conditions.</td>
+</tr>
+<tr>
+<td>April 28, 2026</td>
+<td>Versioning and sharing complete</td>
+<td>Version history and owner-managed permission updates work through the UI and API.</td>
+</tr>
+<tr>
+<td>May 8, 2026</td>
+<td>AI proposal workflow complete</td>
+<td>AI requests queue asynchronously, suggestions appear in the UI, and apply/reject flows persist status correctly.</td>
+</tr>
+<tr>
+<td>May 17, 2026</td>
+<td>Hardening sprint complete</td>
+<td>README, diagrams, ADRs, risk register, tests, and environment setup are current; demo script is rehearsed.</td>
+</tr>
+<tr>
+<td>May 24, 2026</td>
+<td>Final submission candidate</td>
+<td>End-to-end demo passes from fresh clone, report is exported to PDF, and repository state is submission-ready.</td>
+</tr>
+</tbody></table>
+<h2>4. Proof of Concept</h2>
+<h3>4.1 What the PoC Demonstrates</h3>
+<p>The implemented PoC validates the architectural skeleton in code:</p>
+<ul>
+<li>a working React frontend in <code>apps/web</code></li>
+<li>a working Express API in <code>apps/api</code></li>
+<li>shared Zod contracts in <code>packages/shared</code></li>
+<li>authenticated document listing and loading</li>
+<li>document creation, sharing, version history, and revert</li>
+<li>role-aware AI request, proposal, apply, and reject flow</li>
+<li>WebSocket presence and live content propagation</li>
+</ul>
+<h3>4.2 What the PoC Intentionally Does Not Implement Yet</h3>
+<ul>
+<li>production identity provider integration</li>
+<li>persistent PostgreSQL or Redis infrastructure</li>
+<li>OT/CRDT-grade merge logic for same-character concurrent edits</li>
+<li>real export jobs for PDF, DOCX, or Markdown</li>
+<li>production LLM provider integration and tenant billing</li>
+</ul>
+<p>These omissions are deliberate. The PoC proves the contracts, module boundaries, and communication model without pretending the prototype is already production-ready.</p>
+<h3>4.3 Architecture-to-Code Alignment</h3>
+<table>
+<thead>
+<tr>
+<th>Architecture Element</th>
+<th>PoC Implementation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Web App container</td>
+<td><code>apps/web</code> React client</td>
+</tr>
+<tr>
+<td>Application API container</td>
+<td><code>apps/api</code> Express app and route modules</td>
+</tr>
+<tr>
+<td>Realtime Gateway</td>
+<td><code>apps/api/src/realtime/collaboration-hub.ts</code></td>
+</tr>
+<tr>
+<td>Shared Contracts</td>
+<td><code>packages/shared/src/index.ts</code></td>
+</tr>
+<tr>
+<td>Document Store</td>
+<td><code>apps/api/src/repositories/in-memory-store.ts</code> as the PoC adapter</td>
+</tr>
+<tr>
+<td>AI Orchestrator</td>
+<td><code>apps/api/src/services/ai-service.ts</code> with async suggestion completion</td>
+</tr>
+</tbody></table>
+<h3>4.4 How to Run the PoC</h3>
+<p>Use the root-level commands:</p>
+<pre><code class="language-bash">npm install
+npm run dev
+</code></pre>
+<p>Frontend: <code>http://localhost:5173</code><br>Backend: <code>http://localhost:4000</code></p>
+<h3>4.5 Verification Evidence</h3>
+<p>The repository currently passes:</p>
+<ul>
+<li><code>npm run typecheck</code></li>
+<li><code>npm test</code></li>
+<li><code>npm run build</code></li>
+</ul>
+<p>The backend was also smoke-tested through live <code>curl</code> requests against <code>http://localhost:4000/health</code>, <code>POST /v1/auth/login</code>, and <code>GET /v1/documents</code>.</p>
+<h2>Appendix A: Traceability Summary</h2>
+<p>Every user story is covered by at least one functional requirement, and every functional requirement maps to one or more architectural components. The code mirrors the highest-value architecture slices directly: editor UI, shared contracts, document service, auth flow, AI orchestration, versioning, and real-time synchronization.</p>
+
+  </body>
+</html>

@@ -1,0 +1,17 @@
+C4Context
+    title CollabWrite System Context
+
+    Person(collaborator, "Collaborator", "Creates and edits shared documents, reviews AI suggestions, and participates in live sessions.")
+    Person(teamLead, "Team Lead", "Reviews version history, governs sharing, and audits AI-assisted changes.")
+    Person(orgAdmin, "Organization Admin", "Configures tenant policies, AI access defaults, and compliance settings.")
+    System(collabwrite, "CollabWrite", "Collaborative document editor with real-time editing, role-aware sharing, and AI writing assistance.")
+    System_Ext(identityProvider, "Identity Provider", "Issues user identities and organization membership claims.")
+    System_Ext(llmProvider, "LLM Provider", "Processes rewrite, summarize, translate, and restructure prompts.")
+    System_Ext(exportTargets, "Export Targets", "PDF, DOCX, and Markdown export consumers.")
+
+    Rel(collaborator, collabwrite, "Edits documents, views presence, requests AI suggestions")
+    Rel(teamLead, collabwrite, "Reviews documents, reverts versions, manages sharing")
+    Rel(orgAdmin, collabwrite, "Manages AI policy and access governance")
+    Rel(collabwrite, identityProvider, "Authenticates users and resolves tenant identity")
+    Rel(collabwrite, llmProvider, "Sends scoped document context for AI operations")
+    Rel(collabwrite, exportTargets, "Exports document snapshots and tracked suggestions")
