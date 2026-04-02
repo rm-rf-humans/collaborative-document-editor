@@ -1,0 +1,21 @@
+{
+  "name": "collabwrite-midterm",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build --workspace @midterm/shared && concurrently -n shared,api,web -c blue,green,magenta \"npm run dev --workspace @midterm/shared\" \"npm run dev --workspace @midterm/api\" \"npm run dev --workspace @midterm/web\"",
+    "build": "npm run build --workspace @midterm/shared && npm run build --workspace @midterm/api && npm run build --workspace @midterm/web",
+    "test": "npm run build --workspace @midterm/shared && npm run test --workspace @midterm/shared && npm run test --workspace @midterm/api",
+    "typecheck": "npm run build --workspace @midterm/shared && npm run typecheck --workspace @midterm/api && npm run typecheck --workspace @midterm/web",
+    "render:report": "node scripts/render-report.mjs --pdf"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "marked": "^15.0.12"
+  }
+}
