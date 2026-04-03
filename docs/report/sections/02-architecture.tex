@@ -59,7 +59,7 @@ The container design separates the web client from the application API and the r
 
 The application API container is the best Level 3 candidate because it contains most of the business rules: authorization, versioning, AI orchestration, and contract validation. The implemented PoC mirrors this decomposition through route modules, services, a collaboration hub, and an in-memory repository adapter.
 
-Full Mermaid source listings for Figures~\ref{fig:system-context} to~\ref{fig:backend-components}, plus the data model diagram, are provided in Appendix~\ref{app:mermaid}.
+Full Mermaid source listings for Figures~\ref{fig:system-context} to~\ref{fig:backend-components}, plus the data model and AI lifecycle diagrams, are provided in Appendix~\ref{app:mermaid}.
 
 \subsubsection{Feature Decomposition}
 
@@ -103,6 +103,15 @@ AI output is presented as a tracked proposal in a side panel rather than as an i
 \end{enumerate}
 
 The current PoC supports apply and reject. The target product also supports partial acceptance, which is already represented in the data model through the \texttt{partially\_applied} state.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{ai-lifecycle.pdf}
+    \caption{Asynchronous AI suggestion lifecycle in the implemented PoC.}
+    \label{fig:ai-lifecycle}
+\end{figure}
+
+Figure~\ref{fig:ai-lifecycle} makes one of the most important design choices explicit: AI is handled as an asynchronous proposal workflow rather than a synchronous content mutation. The client gets a fast acceptance response, the server performs prompt assembly and provider interaction out of band, and the final suggestion re-enters the user experience through the same realtime channel used for collaborative document updates.
 
 \subsubsection{AI During Collaboration}
 
@@ -314,7 +323,7 @@ Planned test layers include unit tests for prompt selection and permission polic
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{data-model.pdf}
-    \caption{Entity-relationship diagram for the target data model.}
+    \caption{Logical data model diagram for the implemented PoC.}
     \label{fig:data-model}
 \end{figure}
 

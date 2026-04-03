@@ -13,7 +13,8 @@ const diagrams = [
   "system-context",
   "container",
   "backend-components",
-  "data-model"
+  "data-model",
+  "ai-lifecycle"
 ];
 
 fs.mkdirSync(renderedDir, { recursive: true });

@@ -1,0 +1,57 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#F7F2E8",
+    "primaryTextColor": "#183230",
+    "primaryBorderColor": "#2E615D",
+    "lineColor": "#527A76",
+    "secondaryColor": "#EDF4F2",
+    "tertiaryColor": "#FFF8F0",
+    "background": "#FFFFFF",
+    "activationBorderColor": "#2E615D",
+    "activationBkgColor": "#EDF4F2",
+    "sequenceNumberColor": "#183230",
+    "signalColor": "#527A76",
+    "signalTextColor": "#183230",
+    "labelBoxBkgColor": "#F7F2E8",
+    "labelBoxBorderColor": "#2E615D",
+    "labelTextColor": "#183230"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+    actor Writer
+    participant Web as Web App
+    participant API as Node API
+    participant AIS as AI Service
+    participant LLM as LLM Provider
+    participant RT as Realtime Hub
+
+    Writer->>Web: Select text and request rewrite
+    Web->>API: POST /ai-operations<br/>feature + selection + version
+    API->>AIS: Validate role, scope context,<br/>create queued interaction
+    AIS-->>API: interactionId + queued status
+    API-->>Web: 202 Accepted
+
+    AIS->>LLM: Submit scoped prompt<br/>with template version
+    LLM-->>AIS: Suggested text
+    AIS->>AIS: Persist completed result<br/>and requestedVersion
+    AIS->>RT: Emit ai.completed
+    RT-->>Web: Push completed interaction
+    Web-->>Writer: Show proposal in AI panel
+
+    alt User applies while document version is unchanged
+        Writer->>Web: Apply suggestion
+        Web->>API: POST /ai-interactions/:id/apply
+        API->>AIS: Verify suggestion is not stale
+        AIS->>API: Updated content + new version
+        API->>RT: Broadcast document.updated
+        RT-->>Web: Push updated document
+        Web-->>Writer: Show saved content and history
+    else Document changed before apply
+        Writer->>Web: Apply stale suggestion
+        Web->>API: POST /ai-interactions/:id/apply
+        API-->>Web: 409 AI_CONTEXT_STALE
+        Web-->>Writer: Prompt reload or fresh AI request
+    end
