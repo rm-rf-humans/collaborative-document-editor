@@ -1,14 +1,18 @@
-import type { AiInteraction, DocumentPermission, DocumentVersion, User } from "@midterm/shared";
+import type { AiInteraction, AiProviderStatus, DocumentPermission, DocumentVersion, ExportFormat, User } from "@midterm/shared";
 
 type InspectorPanelProps = {
   availableUsers: User[];
   permissions: DocumentPermission[];
   versions: DocumentVersion[];
   aiInteractions: AiInteraction[];
+  aiProvider: AiProviderStatus | null;
   shareTargetUserId: string;
   shareRole: DocumentPermission["role"];
   shareAllowAi: boolean;
   aiTargetLanguage: string;
+  exportFormat: ExportFormat;
+  includeAiAppendix: boolean;
+  canExport: boolean;
   canManageSharing: boolean;
   canUseAi: boolean;
   onShareTargetUserIdChange: (value: string) => void;
@@ -16,7 +20,10 @@ type InspectorPanelProps = {
   onShareAllowAiChange: (value: boolean) => void;
   onShareSubmit: () => void;
   onAiTargetLanguageChange: (value: string) => void;
-  onRequestAi: (feature: "rewrite" | "summarize" | "translate" | "restructure") => void;
+  onExportFormatChange: (value: ExportFormat) => void;
+  onIncludeAiAppendixChange: (value: boolean) => void;
+  onExportDocument: () => void;
+  onRequestAi: (feature: "rewrite" | "summarize" | "translate" | "restructure" | "proofread" | "complete") => void;
   onApplySuggestion: (interactionId: string) => void;
   onRejectSuggestion: (interactionId: string) => void;
   onRevertVersion: (versionNumber: number) => void;
@@ -27,10 +34,14 @@ export function InspectorPanel({
   permissions,
   versions,
   aiInteractions,
+  aiProvider,
   shareTargetUserId,
   shareRole,
   shareAllowAi,
   aiTargetLanguage,
+  exportFormat,
+  includeAiAppendix,
+  canExport,
   canManageSharing,
   canUseAi,
   onShareTargetUserIdChange,
@@ -38,6 +49,9 @@ export function InspectorPanel({
   onShareAllowAiChange,
   onShareSubmit,
   onAiTargetLanguageChange,
+  onExportFormatChange,
+  onIncludeAiAppendixChange,
+  onExportDocument,
   onRequestAi,
   onApplySuggestion,
   onRejectSuggestion,
@@ -47,10 +61,19 @@ export function InspectorPanel({
     <aside className="inspector">
       <section className="inspector-card">
         <p className="eyebrow">AI Assistant</p>
+        {aiProvider && (
+          <p className="muted-note">
+            {aiProvider.live ? "Live" : "Fallback"} {aiProvider.mode} provider. {aiProvider.message}
+          </p>
+        )}
         <div className="button-row">
           <button className="secondary-button" disabled={!canUseAi} onClick={() => onRequestAi("rewrite")} type="button">Rewrite</button>
           <button className="secondary-button" disabled={!canUseAi} onClick={() => onRequestAi("summarize")} type="button">Summarize</button>
           <button className="secondary-button" disabled={!canUseAi} onClick={() => onRequestAi("restructure")} type="button">Restructure</button>
+        </div>
+        <div className="button-row">
+          <button className="secondary-button" disabled={!canUseAi} onClick={() => onRequestAi("proofread")} type="button">Proofread</button>
+          <button className="secondary-button" disabled={!canUseAi} onClick={() => onRequestAi("complete")} type="button">Continue Writing</button>
         </div>
         <label className="field">
           <span>Translate Target</span>
@@ -59,6 +82,7 @@ export function InspectorPanel({
         <button className="secondary-button full-width" disabled={!canUseAi} onClick={() => onRequestAi("translate")} type="button">
           Translate Selection
         </button>
+        <p className="muted-note">Proofread preserves wording and markup. Continue Writing inserts text at the current cursor position.</p>
 
         <div className="stack-list">
           {aiInteractions.length === 0 && <p className="muted-note">No AI suggestions yet.</p>}
@@ -111,7 +135,7 @@ export function InspectorPanel({
             </button>
           </>
         ) : (
-          <p className="muted-note">Only document owners can change permissions in the PoC.</p>
+          <p className="muted-note">Only document owners can change permissions in this prototype.</p>
         )}
 
         <div className="stack-list compact">
@@ -122,6 +146,26 @@ export function InspectorPanel({
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="inspector-card">
+        <p className="eyebrow">Export</p>
+        <label className="field">
+          <span>Format</span>
+          <select value={exportFormat} onChange={(event) => onExportFormatChange(event.target.value as ExportFormat)}>
+            <option value="pdf">PDF</option>
+            <option value="docx">DOCX</option>
+            <option value="markdown">Markdown</option>
+          </select>
+        </label>
+        <label className="toggle-row">
+          <input checked={includeAiAppendix} onChange={(event) => onIncludeAiAppendixChange(event.target.checked)} type="checkbox" />
+          <span>Attach AI history appendix</span>
+        </label>
+        <button className="primary-button full-width" disabled={!canExport} onClick={onExportDocument} type="button">
+          Export Document
+        </button>
+        <p className="muted-note">Exports are rendered by the FastAPI worker so PDF, DOCX, and Markdown stay consistent across clients.</p>
       </section>
 
       <section className="inspector-card">
