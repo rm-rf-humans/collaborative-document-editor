@@ -40,4 +40,4 @@ Target length: 3 minutes maximum
   - `npm run typecheck`
   - `npm test`
   - `npm run build`
-- Point to `docs/report/report.md` and `docs/diagrams/*.mmd` as the architecture deliverables.
+- Point to `docs/report/report.tex`, `docs/report/report.pdf`, and `docs/diagrams/*.mmd` as the architecture deliverables.
