@@ -10,7 +10,7 @@ export function LoginView({ users, onLogin, loading }: LoginViewProps) {
   return (
     <main className="login-shell">
       <section className="login-card">
-        <p className="eyebrow">Midterm PoC</p>
+        <p className="eyebrow">Midterm Project</p>
         <h1>CollabWrite</h1>
         <p className="lead">
           A collaborative document editor with role-aware sharing, live presence, version history,
