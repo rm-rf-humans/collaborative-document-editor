@@ -200,7 +200,7 @@ export default function App() {
       .catch(() => {
         setStatusMessage("Unable to load the API. Start the backend before opening the PoC.");
       });
-  }, [clearSession]);
+  }, []);
 
   useEffect(() => {
     if (!sessionToken || !currentUser) {
@@ -226,7 +226,7 @@ export default function App() {
       }
       setStatusMessage("Unable to load documents.");
     });
-  }, [clearSession, currentUser, refreshDocuments, sessionToken]);
+  }, [currentUser, sessionToken]);
 
   useEffect(() => {
     if (!sessionToken || !selectedDocumentId) {
@@ -240,7 +240,7 @@ export default function App() {
       }
       setStatusMessage("Unable to load the selected document.");
     });
-  }, [clearSession, loadWorkspace, selectedDocumentId, sessionToken]);
+  }, [selectedDocumentId, sessionToken]);
 
   useEffect(() => {
     if (!sessionToken || !selectedDocumentId) {
@@ -283,7 +283,7 @@ export default function App() {
       setParticipants([]);
       setSocketConnected(false);
     };
-  }, [handleSocketPayload, selectedDocumentId, sessionToken]);
+  }, [selectedDocumentId, sessionToken]);
 
   useEffect(() => {
     if (!document || !canEdit || !socketConnected || !socketRef.current) {

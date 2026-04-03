@@ -14,10 +14,12 @@
     "test": "npm run build --workspace @midterm/shared && npm run test --workspace @midterm/shared && npm run test --workspace @midterm/api && npm run test --workspace @midterm/web",
     "test:export": "python3 -m pytest services/export-api/test_main.py",
     "smoke:runtime": "node scripts/smoke-runtime.mjs",
+    "record:demo": "node scripts/record-demo.mjs",
     "typecheck": "npm run build --workspace @midterm/shared && npm run typecheck --workspace @midterm/api && npm run typecheck --workspace @midterm/web",
     "render:report": "node scripts/render-report.mjs --pdf"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "playwright": "^1.54.2"
   }
 }

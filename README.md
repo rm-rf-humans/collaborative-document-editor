@@ -98,6 +98,16 @@ npm run smoke:runtime
 
 `npm test` now runs shared contract tests, backend integration/unit tests, and frontend component/unit tests.
 
+## Demo Recording
+
+To generate a polished browser walkthrough video that covers login, collaboration, AI, sharing, version history, export, and document creation, run:
+
+```bash
+npm run record:demo
+```
+
+The recorder uses Playwright, saves raw WebM plus MP4 output under `artifacts/demo-recordings/`, and starts or reuses the local app/export services automatically.
+
 ## Real AI Integration
 
 The backend can now use the OpenAI Responses API for production-style writing assistance instead of only the mock provider.
