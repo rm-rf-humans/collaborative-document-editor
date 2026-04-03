@@ -125,6 +125,8 @@ If no `OPENAI_API_KEY` is present, the app stays runnable by falling back to the
 
 AI suggestions are version-scoped. If the document changes after a suggestion is generated, the server rejects blind apply requests and forces the client to reload or request a fresh suggestion.
 
+Cloud-based inline completion is intentionally user-triggered rather than always-on. The provider sees only the document title plus bounded context around the cursor, the UI exposes whether the live or fallback provider is active, and the returned continuation remains a reviewable proposal until the user applies it.
+
 ## Key Demo Flow
 
 1. Open the frontend and log in as `Layla Hassan`.

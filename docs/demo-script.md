@@ -27,6 +27,8 @@ Target length: 3 minutes maximum
 - Wait for the queued request to complete.
 - Show the AI proposal in the right panel.
 - Apply the suggestion and mention that it becomes a new document version instead of silently mutating content.
+- Move the cursor with no selection and click `Continue Writing`.
+- Mention that this completion is cloud-based but still trustworthy for the PoC because it is explicitly user-triggered, sends only bounded cursor context, shows provider status in the UI, and is still applied as a reviewable proposal rather than hidden ghost text.
 
 ## 5. Sharing and Versioning
 

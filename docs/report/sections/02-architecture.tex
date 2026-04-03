@@ -92,6 +92,21 @@ Shared contract package & Maintains request/response/message schemas for web and
 
 AI sees the explicit user selection by default, and the current implementation also passes a narrow surrounding context window for higher-quality rewrites plus a cursor-local context window for inline continuation. This minimizes privacy risk, reduces token cost, and improves prompt relevance without sending the full document body to the provider by default. For very long documents, the system still loads only the requested segment plus lightweight local context instead of the full draft.
 
+\subsubsection{Trustworthiness of Cloud-Based Completion}
+
+Inline completion is the most trust-sensitive AI feature in the PoC because it feels like local autocomplete while still depending on a cloud model. The design therefore uses a deliberately conservative contract:
+
+\begin{enumerate}[leftmargin=1.4em]
+    \item completion is explicit and user-triggered through the \texttt{Continue Writing} action rather than being sent on every keystroke;
+    \item the provider receives only the document title plus bounded text immediately before and after the cursor, not the full draft by default;
+    \item the UI exposes whether the system is using the live OpenAI provider or the fallback mock path;
+    \item the returned text is treated as a proposal, not as silent ghost text, so the writer keeps editorial control;
+    \item each interaction stores the initiator, model, prompt-template version, and requested document version for later inspection; and
+    \item completion apply requests are rejected if the document changed in the meantime.
+\end{enumerate}
+
+This means the completion feature is cloud-based but still explainable in terms of bounded disclosure, explicit invocation, inspectable provenance, and safe application semantics. A production always-on autocomplete experience would require stronger tenant policy controls, retention guarantees, and provider evaluation before it should be trusted with high-sensitivity content.
+
 \subsubsection{Suggestion UX}
 
 AI output is presented as a tracked proposal in a side panel rather than as an immediate inline mutation. This design:
