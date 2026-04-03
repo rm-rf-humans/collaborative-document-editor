@@ -1,17 +1,44 @@
-C4Context
-    title CollabWrite System Context
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#F7F2E8",
+    "primaryTextColor": "#183230",
+    "primaryBorderColor": "#2E615D",
+    "lineColor": "#527A76",
+    "secondaryColor": "#EDF4F2",
+    "tertiaryColor": "#FFF8F0",
+    "background": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "nodeSpacing": 38,
+    "rankSpacing": 58
+  }
+}}%%
+flowchart LR
+    collaborator["Collaborator<br/>Creates, edits, comments, and reviews AI output"]:::actor
+    teamlead["Team Lead / Owner<br/>Manages sharing, reviews history, and reverts changes"]:::actor
+    orgadmin["Organization Admin<br/>Controls tenant policy, AI access, and compliance"]:::actor
 
-    Person(collaborator, "Collaborator", "Creates and edits shared documents, reviews AI suggestions, and participates in live sessions.")
-    Person(teamLead, "Team Lead", "Reviews version history, governs sharing, and audits AI-assisted changes.")
-    Person(orgAdmin, "Organization Admin", "Configures tenant policies, AI access defaults, and compliance settings.")
-    System(collabwrite, "CollabWrite", "Collaborative document editor with real-time editing, role-aware sharing, and AI writing assistance.")
-    System_Ext(identityProvider, "Identity Provider", "Issues user identities and organization membership claims.")
-    System_Ext(llmProvider, "LLM Provider", "Processes rewrite, summarize, translate, and restructure prompts.")
-    System_Ext(exportTargets, "Export Targets", "PDF, DOCX, and Markdown export consumers.")
+    idp["Identity Provider<br/>OIDC / SAML identities and tenant claims"]:::external
+    llm["LLM Provider<br/>Rewrite, summarize, translate, and restructure requests"]:::external
+    export["Export Targets<br/>PDF, DOCX, and Markdown consumers"]:::external
 
-    Rel(collaborator, collabwrite, "Edits documents, views presence, requests AI suggestions")
-    Rel(teamLead, collabwrite, "Reviews documents, reverts versions, manages sharing")
-    Rel(orgAdmin, collabwrite, "Manages AI policy and access governance")
-    Rel(collabwrite, identityProvider, "Authenticates users and resolves tenant identity")
-    Rel(collabwrite, llmProvider, "Sends scoped document context for AI operations")
-    Rel(collabwrite, exportTargets, "Exports document snapshots and tracked suggestions")
+    subgraph boundary["CollabWrite System Boundary"]
+        direction TB
+        collabwrite["CollabWrite Platform<br/>Real-time collaborative editor with AI writing assistant"]:::system
+    end
+
+    collaborator -->|"edit content, follow presence, request AI"| collabwrite
+    teamlead -->|"review versions, share documents, audit AI usage"| collabwrite
+    orgadmin -->|"configure policy, retention, and feature availability"| collabwrite
+
+    collabwrite -->|"authenticate sessions and resolve org membership"| idp
+    collabwrite -->|"send scoped text and prompt metadata for AI operations"| llm
+    collabwrite -->|"export point-in-time snapshots and tracked changes"| export
+
+    classDef actor fill:#F3E8CF,stroke:#8A6C30,stroke-width:1.5px,color:#3B2D0C;
+    classDef system fill:#EAF4F1,stroke:#2E615D,stroke-width:2px,color:#183230;
+    classDef external fill:#F9F4EC,stroke:#A88955,stroke-width:1.4px,color:#3B2D0C;
+    style boundary fill:#FFFFFF,stroke:#2E615D,stroke-width:1.6px,stroke-dasharray: 6 4;

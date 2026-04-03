@@ -1,26 +1,58 @@
-C4Container
-    title CollabWrite Container Diagram
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#F7F2E8",
+    "primaryTextColor": "#183230",
+    "primaryBorderColor": "#2E615D",
+    "lineColor": "#527A76",
+    "secondaryColor": "#EDF4F2",
+    "tertiaryColor": "#FFF8F0",
+    "background": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "nodeSpacing": 38,
+    "rankSpacing": 58
+  }
+}}%%
+flowchart LR
+    user["User<br/>Collaborator, owner, or admin"]:::actor
+    idp["Identity Provider<br/>OIDC / SAML"]:::external
+    llm["LLM Provider<br/>Hosted model APIs"]:::external
 
-    Person(user, "User", "Collaborator, team lead, or org admin")
-    System_Boundary(collabwrite, "CollabWrite") {
-        Container(web, "Web App", "React + Vite + TypeScript", "Rich-text editing UI, AI controls, sharing UI, version history, and presence visualization.")
-        Container(api, "Application API", "Node.js + Express + TypeScript", "REST API for auth, documents, versions, sharing, and AI orchestration.")
-        Container(realtime, "Realtime Gateway", "WebSocket hub in Node.js", "Pushes presence and shared content updates to active collaborators.")
-        Container(shared, "Shared Contracts Package", "TypeScript + Zod", "Versioned schemas, message contracts, and shared types consumed by web and API.")
-        ContainerDb(dataStore, "Document Store", "PostgreSQL in target architecture; in-memory adapter in PoC", "Documents, permissions, versions, AI interaction history, and sessions.")
-        Container(queue, "AI Job Queue", "Background worker / queue abstraction", "Decouples long-running AI tasks from synchronous API requests.")
-    }
+    subgraph system["CollabWrite Containers"]
+        direction LR
 
-    System_Ext(identityProvider, "Identity Provider", "OIDC/SAML provider")
-    System_Ext(llmProvider, "LLM Provider", "Hosted LLM API")
+        web["Web App<br/>React + Vite<br/>Editor UI, AI panel, sharing, version history"]:::container
 
-    Rel(user, web, "Uses", "HTTPS")
-    Rel(web, api, "CRUD, AI requests, sharing, version history", "HTTPS/JSON")
-    Rel(web, realtime, "Presence join, content updates, AI completion events", "WebSocket")
-    Rel(api, shared, "Consumes schemas and DTOs", "Workspace package")
-    Rel(web, shared, "Consumes schemas and DTOs", "Workspace package")
-    Rel(api, dataStore, "Reads/writes documents, permissions, sessions")
-    Rel(realtime, dataStore, "Reads latest content and updates collaborator counters")
-    Rel(api, queue, "Enqueues AI operations")
-    Rel(queue, llmProvider, "Invokes prompts with scoped document context")
-    Rel(api, identityProvider, "Verifies identity and tenant claims")
+        subgraph runtime["Node.js Runtime Boundary"]
+            direction TB
+            api["Application API<br/>Express + TypeScript<br/>Auth, document CRUD, sharing, versioning"]:::container
+            realtime["Realtime Gateway<br/>WebSocket collaboration hub<br/>Presence and live content fan-out"]:::container
+            aiworker["AI Worker / Queue<br/>Async orchestration layer<br/>Prompt assembly, quota checks, completion events"]:::container
+        end
+
+        db[("Document Store<br/>PostgreSQL target<br/>In-memory adapter in PoC")]:::storage
+        cache[("Collaboration Cache<br/>Redis target<br/>Optional for presence and fan-out")]:::storage
+    end
+
+    user -->|"HTTPS / JSON"| web
+    web -->|"document CRUD, sharing, AI requests"| api
+    web -->|"presence join, live updates, AI completion events"| realtime
+
+    api -->|"verify identity and tenant claims"| idp
+    api -->|"persist documents, permissions, versions, sessions"| db
+    realtime -->|"load snapshots and update collaborator counts"| db
+    realtime -->|"presence fan-out and room state"| cache
+    api -->|"enqueue AI work"| aiworker
+    aiworker -->|"scoped prompt execution"| llm
+    aiworker -->|"persist interaction status"| db
+    aiworker -->|"publish completion events"| realtime
+
+    classDef actor fill:#F3E8CF,stroke:#8A6C30,stroke-width:1.5px,color:#3B2D0C;
+    classDef container fill:#EAF4F1,stroke:#2E615D,stroke-width:1.8px,color:#183230;
+    classDef external fill:#F9F4EC,stroke:#A88955,stroke-width:1.4px,color:#3B2D0C;
+    classDef storage fill:#FFF8F0,stroke:#B78452,stroke-width:1.6px,color:#4B3212;
+    style system fill:#FFFFFF,stroke:#2E615D,stroke-width:1.6px,stroke-dasharray: 6 4;
+    style runtime fill:#FCF8F2,stroke:#6F938F,stroke-width:1.2px,stroke-dasharray: 4 3;
