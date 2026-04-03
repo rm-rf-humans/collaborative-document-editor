@@ -108,6 +108,10 @@ npm run record:demo
 
 The recorder uses Playwright, saves raw WebM plus MP4 output under `artifacts/demo-recordings/`, and starts or reuses the local app/export services automatically.
 
+Committed demo video for submission/reference:
+
+- [collabwrite-demo-1.5x.mp4](docs/demo/collabwrite-demo-1.5x.mp4)
+
 ## Real AI Integration
 
 The backend can now use the OpenAI Responses API for production-style writing assistance instead of only the mock provider.
