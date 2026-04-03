@@ -1,5 +1,15 @@
 import { selectionToText, type ApplyAiSuggestionRequest, type ShareDocumentRequest } from "@midterm/shared";
 import { InMemoryStore } from "../repositories/in-memory-store.js";
+import type { Document } from "@midterm/shared";
+import type { AiRequestMetadata } from "./ai-provider.js";
+
+function buildInteractionSourceText(document: Document, selection: { start: number; end: number }, feature: "complete" | Parameters<InMemoryStore["requestAiInteraction"]>[2]) {
+  if (feature === "complete") {
+    return `Cursor at character ${selection.start}. Generate a continuation that fits the surrounding draft.`;
+  }
+
+  return selectionToText(document.content, selection);
+}
 
 export class DocumentService {
   constructor(private readonly store: InMemoryStore) {}
@@ -40,16 +50,19 @@ export class DocumentService {
     return this.store.shareDocument(documentId, userId, request);
   }
 
-  requestAi(documentId: string, userId: string, feature: Parameters<InMemoryStore["requestAiInteraction"]>[2], selection: Parameters<InMemoryStore["requestAiInteraction"]>[3], targetLanguage?: string) {
+  requestAi(documentId: string, userId: string, feature: Parameters<InMemoryStore["requestAiInteraction"]>[2], selection: Parameters<InMemoryStore["requestAiInteraction"]>[3], metadata: AiRequestMetadata, targetLanguage?: string) {
     const document = this.getDocument(documentId, userId);
-    return this.store.requestAiInteraction(
+    const interaction = this.store.requestAiInteraction(
       documentId,
       userId,
       feature,
       selection,
-      selectionToText(document.content, selection),
+      buildInteractionSourceText(document, selection, feature),
+      metadata,
       targetLanguage
     );
+
+    return { document, interaction };
   }
 
   completeAi(documentId: string, interactionId: string, suggestedText: string, status: Parameters<InMemoryStore["completeAiInteraction"]>[3]) {
