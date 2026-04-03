@@ -1,0 +1,131 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{tabularray}
+\usepackage{array}
+\usepackage{pdflscape}
+\usepackage{setspace}
+\usepackage{booktabs}
+
+\UseTblrLibrary{booktabs}
+
+\definecolor{ink}{HTML}{1F2D2A}
+\definecolor{accent}{HTML}{2E615D}
+\definecolor{accentsoft}{HTML}{EAF4F1}
+\definecolor{warm}{HTML}{F7F2E8}
+\definecolor{tableheader}{HTML}{2E615D}
+\definecolor{tableline}{HTML}{C7D6D4}
+\definecolor{codebg}{HTML}{F6F8F8}
+\definecolor{framecol}{HTML}{B8C9C7}
+\definecolor{muted}{HTML}{5E7470}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accent,
+  urlcolor=accent,
+  citecolor=accent,
+  pdftitle={Collaborative Document Editor with AI Writing Assistant},
+  pdfauthor={Ahmed Aymna, Mohamed Ibrahim, Aya, Praveen Anilkumar Shukla}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setstretch{1.04}
+\graphicspath{{../diagrams/rendered/}}
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
+\SetTblrInner{rowsep=4.5pt}
+
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.75em}{}
+\titleformat{\subsection}{\large\bfseries\color{ink}}{\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{ink}}{\thesubsubsection}{0.6em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{muted}{Collaborative Document Editor with AI Writing Assistant}}
+\fancyhead[R]{\textcolor{muted}{\thepage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{framecol}\leaders\hrule height \headrulewidth\hfill}}
+
+\lstdefinestyle{reportcode}{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{framecol},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  numbers=left,
+  numberstyle=\tiny\color{muted},
+  xleftmargin=1em,
+  framexleftmargin=0.7em,
+  aboveskip=0.8em,
+  belowskip=0.8em
+}
+
+\newcommand{\Repo}{\textsc{CollabWrite}}
+\newcommand{\PoC}{proof of concept}
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{2.5cm}
+
+    {\Huge\bfseries Collaborative Document Editor with AI Writing Assistant\par}
+    \vspace{0.6cm}
+    {\Large Requirements Engineering, Architecture, Project Management, and Proof of Concept\par}
+    \vspace{1.4cm}
+
+    \begin{tabular}{rl}
+        Project Codename: & \Repo \\
+        Assignment: & Midterm Project \\
+        Prepared for: & February 2026 brief \\
+        Prepared by: & Ahmed Aymna \\
+        & Mohamed Ibrahim \\
+        & Aya \\
+        & Praveen Anilkumar Shukla \\
+        Prepared on: & April 3, 2026 \\
+    \end{tabular}
+
+    \vfill
+
+    {\large
+    This report documents the requirements, architecture, repository organization,\\
+    management approach, and runnable \PoC{} for a real-time collaborative document editor\\
+    with an integrated AI writing assistant.
+    \par}
+
+    \vfill
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+\input{sections/01-requirements}
+\clearpage
+\input{sections/02-architecture}
+\clearpage
+\input{sections/03-project-management}
+\clearpage
+\input{sections/04-proof-of-concept}
+\clearpage
+
+\appendix
+\input{sections/appendix-mermaid}
+
+\end{document}

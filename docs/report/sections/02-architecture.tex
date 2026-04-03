@@ -1,0 +1,369 @@
+\section{System Architecture}
+
+\subsection{Architectural Drivers}
+
+\begin{longtblr}[
+  caption = {Ranked architectural drivers},
+  label = {tab:drivers}
+]{
+  width = \textwidth,
+  colspec = {X[0.5,l] X[1.4,l] X[2.8,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Rank & Driver & Why it dominates the design \\
+1 & Low-latency collaborative editing & The core product fails if shared edits feel slow or unsafe. This drove the push-based real-time channel and explicit version-conflict handling. \\
+2 & Security and privacy of document content & Sensitive text plus third-party LLM processing requires scoped context, role checks, and audit-friendly data models. \\
+3 & Predictable AI user experience & AI is a product feature rather than a novelty. Suggestions must be proposals, asynchronous, role-aware, and undoable through version history. \\
+4 & Modularity for team parallelism & Frontend, backend, contracts, and AI flows need clean boundaries so multiple developers can work safely in parallel. \\
+5 & Auditability and recovery & Version history and AI interaction records are essential because collaborative writing regularly needs rollback and explanation. \\
+\end{longtblr}
+
+If the ranking changed, the architecture would change as well. For example, if cost minimization outranked collaboration latency, the system would favor heavier polling, reduced presence detail, and more batched AI flows. Instead, this design spends complexity on WebSocket propagation and explicit proposal workflows because user trust in collaboration is the primary architectural driver.
+
+\subsection{System Design Using the C4 Model}
+
+\subsubsection{Level 1: System Context Diagram}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{system-context.pdf}
+    \caption{Level 1 system context diagram for \Repo{}.}
+    \label{fig:system-context}
+\end{figure}
+
+The system context places \Repo{} between three human actor categories and three external systems. The most important external boundary is the LLM provider because it introduces privacy, latency, and cost trade-offs. Identity remains external as well so authentication can evolve without changing document-domain logic.
+
+\subsubsection{Level 2: Container Diagram}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{container.pdf}
+    \caption{Level 2 container view for \Repo{}.}
+    \label{fig:container}
+\end{figure}
+
+The container design separates the web client from the application API and the realtime collaboration gateway. In the PoC, the REST API and WebSocket gateway run in the same Node.js process, but they remain distinct containers logically because they solve different problems and will scale differently later. The implementation now also includes a dedicated FastAPI export worker so binary document rendering stays isolated from the interactive Node.js collaboration path. The target architecture also introduces an AI worker / queue boundary so long-running model calls do not block interactive API behavior.
+
+\subsubsection{Level 3: Component Diagram for the Application API}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{backend-components.pdf}
+    \caption{Level 3 component view for the application API container.}
+    \label{fig:backend-components}
+\end{figure}
+
+The application API container is the best Level 3 candidate because it contains most of the business rules: authorization, versioning, AI orchestration, and contract validation. The implemented PoC mirrors this decomposition through route modules, services, a collaboration hub, and an in-memory repository adapter.
+
+Full Mermaid source listings for Figures~\ref{fig:system-context} to~\ref{fig:backend-components}, plus the data model diagram, are provided in Appendix~\ref{app:mermaid}.
+
+\subsubsection{Feature Decomposition}
+
+\begin{longtblr}[
+  caption = {Feature decomposition and module contracts},
+  label = {tab:feature-decomposition}
+]{
+  width = \textwidth,
+  colspec = {X[1.2,l] X[2.0,l] X[1.7,l] X[1.9,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Module & Responsibility & Depends on & Exposes \\
+Web editor module & Owns text-editing UX, selection capture, document switching, and read-only behavior by role & Shared contracts, REST API, realtime gateway & Document view state, selection range, editor events \\
+Frontend collaboration state & Tracks current document, current version, participants, reconnect state, and AI-panel state & WebSocket channel, shared message schemas & Presence UI, reconnect logic, socket message handlers \\
+Realtime synchronization layer & Validates join context, tracks presence, applies live edits, and broadcasts updates & Auth service, document service, shared contracts & WebSocket session \texttt{/ws}, \texttt{presence.*}, \texttt{document.updated}, and \texttt{ai.completed} messages \\
+AI assistant service & Persists AI interactions, scopes context, schedules async completion, enforces quota and policy, and selects the live or fallback provider & Document service, repository, OpenAI Responses adapter, or mock adapter & AI request creation, completion lifecycle, provider status, and suggestion updates \\
+Document storage and versioning & Stores document aggregate, immutable versions, permissions, and AI history & Repository adapter & CRUD, version history, revert, share, and apply-suggestion operations \\
+Export rendering service & Produces PDF, DOCX, and Markdown artifacts from point-in-time document snapshots and optional AI history & Application API, Python document libraries & \texttt{POST /render} and binary export payloads \\
+Authentication and authorization & Resolves session tokens and enforces role rules plus \texttt{allowAi} & Session store, permission grants & Auth middleware, login endpoint, access decisions \\
+Shared contract package & Maintains request/response/message schemas for web and API & Zod and TypeScript & \texttt{@midterm/shared} DTOs and runtime parsers \\
+\end{longtblr}
+
+\subsection{AI Integration Design}
+
+\subsubsection{Context and Scope}
+
+AI sees the explicit user selection by default, and the current implementation also passes a narrow surrounding context window for higher-quality rewrites plus a cursor-local context window for inline continuation. This minimizes privacy risk, reduces token cost, and improves prompt relevance without sending the full document body to the provider by default. For very long documents, the system still loads only the requested segment plus lightweight local context instead of the full draft.
+
+\subsubsection{Suggestion UX}
+
+AI output is presented as a tracked proposal in a side panel rather than as an immediate inline mutation. This design:
+
+\begin{enumerate}[leftmargin=1.4em]
+    \item keeps authors in control,
+    \item makes AI history inspectable, and
+    \item supports later partial-merge and tracked-change export workflows.
+\end{enumerate}
+
+The current PoC supports apply and reject. The target product also supports partial acceptance, which is already represented in the data model through the \texttt{partially\_applied} state.
+
+\subsubsection{AI During Collaboration}
+
+The system does not lock the selected region during AI generation. Other edits may continue. Because of that, completed suggestions are version-scoped: if the document changes after the request was created, the server rejects a blind apply attempt and forces the client to reload or request a fresh suggestion. If the user applies a still-valid suggestion, that application becomes a new version and is broadcast to the session like any other edit. This avoids pessimistic-locking complexity while preserving recoverability through version history.
+
+\subsubsection{Prompt Design}
+
+Prompt logic is template-based and versioned rather than hardcoded inside controllers. Each AI interaction records \texttt{promptTemplateVersion} so the team can compare behavior over time and revise prompts without losing traceability. The implemented provider layer also forces structured output parsing so the model returns only the insertion or replacement text expected by the editor.
+
+\subsubsection{Model and Cost Strategy}
+
+The implemented AI layer uses different model classes by task:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item rewrite and restructure use a higher-quality model;
+    \item summarize and translation use cheaper, faster models where acceptable;
+    \item quota management combines per-user daily limits with tenant budget caps.
+\end{itemize}
+
+When quota is exceeded, the API returns a specific \texttt{quota\_exceeded} state so the client can distinguish this from a transient model failure. When the live provider is not configured, the same orchestration path falls back to a deterministic mock adapter so local development remains runnable.
+
+\subsection{API Design}
+
+\subsubsection{API Style}
+
+The communication model deliberately mixes synchronous REST with asynchronous push:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item REST handles CRUD, sharing, version history, login, and AI request creation because these actions are explicit, auditable, and easy to test.
+    \item REST also brokers export requests because export is an explicit document-management operation that returns a point-in-time artifact.
+    \item WebSocket handles presence and live content propagation because polling would degrade collaboration UX and waste resources.
+\end{itemize}
+
+\subsubsection{REST API Contract}
+
+\begin{landscape}
+\scriptsize
+\begin{longtblr}[
+  caption = {REST API contract},
+  label = {tab:api-contract}
+]{
+  width = \linewidth,
+  colspec = {X[1.2,l] X[1.5,l] X[1.8,l] X[1.8,l] X[1.7,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Interaction & Method and path & Request contract & Response contract & Notes \\
+Login & \texttt{POST /v1/auth/login} & \texttt{\{ userId \}} & \texttt{\{ session, user \}} & PoC uses seeded users; production swaps to IdP-backed login \\
+Session lookup & \texttt{GET /v1/auth/me} & Bearer token & \texttt{\{ session, user \}} & Validates token and refreshes client context \\
+List users & \texttt{GET /v1/users} & none & \texttt{\{ users[] \}} & Used for demo login and sharing UI \\
+AI provider status & \texttt{GET /v1/ai/provider} & Bearer token & \texttt{\{ provider \}} & Exposes whether the app is using live OpenAI or the fallback adapter \\
+List documents & \texttt{GET /v1/documents} & Bearer token & \texttt{\{ documents[] \}} & Returns only documents visible to the caller \\
+Create document & \texttt{POST /v1/documents} & \texttt{\{ title, content \}} & \texttt{\{ document \}} & Seeds initial owner permission and version 1 \\
+Load document & \texttt{GET /v1/documents/:id} & Bearer token & \texttt{\{ document \}} & Returns content, permissions, versions, and AI history \\
+Update content & \texttt{PUT /v1/documents/:id/content} & \texttt{\{ baseVersion, content, reason \}} & \texttt{\{ document, savedVersion \}} & Rejects stale base version \\
+List versions & \texttt{GET /v1/documents/:id/versions} & Bearer token & \texttt{\{ versions[] \}} & Ordered newest-first \\
+Revert version & \texttt{POST /v1/documents/:id/revert} & \texttt{\{ versionNumber \}} & \texttt{\{ document, savedVersion \}} & Creates a new top-of-history version \\
+List permissions & \texttt{GET /v1/documents/:id/permissions} & Bearer token & \texttt{\{ permissions[] \}} & Used to inspect access state \\
+Share document & \texttt{POST /v1/documents/:id/share} & \texttt{\{ principalType, principalId, role, allowAi \}} & \texttt{\{ permissions[] \}} & Owner-only operation \\
+Export document & \texttt{POST /v1/documents/:id/export} & \texttt{\{ format, includeAiAppendix \}} & binary attachment & Proxies a snapshot to the FastAPI renderer and returns PDF, DOCX, or Markdown \\
+List AI interactions & \texttt{GET /v1/documents/:id/ai-interactions} & Bearer token & \texttt{\{ interactions[] \}} & Supports reload and auditing \\
+Request AI & \texttt{POST /v1/documents/:id/ai-operations} & \texttt{\{ feature, selection, targetLanguage? \}} & \texttt{\{ interaction \}} & Returns \texttt{202 Accepted} or \texttt{429} quota result \\
+Apply AI suggestion & \texttt{POST /v1/documents/:id/ai-interactions/:iid/apply} & \texttt{\{ mode, acceptedText? \}} & \texttt{\{ document \}} & Creates a new version if content changes and rejects stale AI context \\
+Reject AI suggestion & \texttt{POST /v1/documents/:id/ai-interactions/:iid/reject} & \texttt{\{\}} & \texttt{\{ interactions[] \}} & Marks the suggestion as rejected \\
+\end{longtblr}
+\normalsize
+\end{landscape}
+
+\subsubsection{Realtime Session Contract}
+
+The client joins a document session through \url{ws://host/ws?token=<session>&documentId=<documentId>}. Server-to-client messages include \texttt{presence.snapshot}, \texttt{presence.updated}, \texttt{document.updated}, and \texttt{ai.completed}. Client-to-server messages include \texttt{document.change} and \texttt{cursor.change}.
+
+\subsubsection{Long-Running AI Operations}
+
+From the client perspective, AI is asynchronous:
+
+\begin{enumerate}[leftmargin=1.4em]
+    \item the client submits \texttt{POST /ai-operations};
+    \item the API immediately returns a queued interaction record;
+    \item the AI worker completes later and emits \texttt{ai.completed} over WebSocket;
+    \item the client updates the side panel and waits for explicit apply or reject.
+\end{enumerate}
+
+This avoids long synchronous HTTP waits and distinguishes queue acceptance from model completion.
+
+\subsubsection{Error Handling Strategy}
+
+Clients distinguish failure modes by explicit error codes or interaction state:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item AI slow: request accepted but interaction remains \texttt{queued} or \texttt{in\_progress};
+    \item AI failed: interaction becomes \texttt{failed};
+    \item quota exceeded: HTTP \texttt{429} with interaction state \texttt{quota\_exceeded};
+    \item stale AI suggestion: HTTP \texttt{409} with \texttt{AI\_CONTEXT\_STALE};
+    \item stale edit: HTTP or socket error \texttt{VERSION\_CONFLICT};
+    \item unauthorized: \texttt{UNAUTHORIZED};
+    \item forbidden action: \texttt{FORBIDDEN}, \texttt{EDIT\_NOT\_ALLOWED}, \texttt{SHARE\_NOT\_ALLOWED}, or \texttt{AI\_NOT\_ALLOWED}.
+\end{itemize}
+
+\subsection{Authentication and Authorization}
+
+Authentication is required because the product manages private content and document-scoped permissions. The system expects regular collaborators, document owners or team leads, and organization administrators.
+
+\begin{longtblr}[
+  caption = {Document roles and permissions},
+  label = {tab:roles}
+]{
+  width = \textwidth,
+  colspec = {X[1.0,l] X[0.7,l] X[0.7,l] X[0.7,l] X[0.7,l] X[1.1,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Role & Read & Edit & Revert & Share & Invoke AI \\
+Owner & Yes & Yes & Yes & Yes & Yes \\
+Editor & Yes & Yes & Yes & No & If \texttt{allowAi=true} \\
+Commenter & Yes & No & No & No & If \texttt{allowAi=true} \\
+Viewer & Yes & No & No & No & No by default \\
+\end{longtblr}
+
+The most important privacy consideration is third-party AI processing. The design mitigates this by sending only scoped selections, logging prompt-template versions, and treating AI access as a separate policy knob rather than as a side effect of edit permission.
+
+\subsection{Communication Model}
+
+The communication model is hybrid and push-based:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item initial open: the client authenticates, fetches the document bundle over REST, and then joins the WebSocket room;
+    \item active editing: presence and edits propagate by push to keep latency low;
+    \item connectivity loss: the client reconnects automatically and reloads the latest snapshot before resuming edits.
+\end{itemize}
+
+This model is more complex than polling, but it aligns with the top-ranked architectural driver: low-latency collaboration.
+
+\subsection{Code Structure and Repository Organization}
+
+\subsubsection{Monorepo vs.\ Multi-Repo}
+
+The project uses a monorepo. With a small team and heavy shared-DTO usage, a monorepo is the lowest-friction option because it keeps web, API, and shared contracts versioned together. A multi-repo split would create unnecessary coordination cost every time request or response schemas evolve.
+
+\subsubsection{Directory Layout}
+
+\begin{lstlisting}[style=reportcode,caption={Repository layout},label={lst:repo-tree}]
+.
+|-- apps
+|   |-- api
+|   |   `-- src
+|   |       |-- middleware
+|   |       |-- realtime
+|   |       |-- repositories
+|   |       |-- routes
+|   |       |-- services
+|   |       |-- utils
+|   |       |-- app.ts
+|   |       |-- app.test.ts
+|   |       `-- server.ts
+|   `-- web
+|       |-- index.html
+|       `-- src
+|           |-- components
+|           |-- styles
+|           |-- api.ts
+|           |-- App.tsx
+|           `-- main.tsx
+|-- packages
+|   `-- shared
+|       `-- src
+|           |-- index.ts
+|           `-- index.test.ts
+|-- services
+|   `-- export-api
+|       |-- main.py
+|       |-- requirements.txt
+|       `-- test_main.py
+|-- docs
+|   |-- diagrams
+|   `-- report
+|-- package.json
+`-- README.md
+\end{lstlisting}
+
+\subsubsection{Shared Code}
+
+Shared request, response, and realtime message schemas live in \texttt{packages/shared}. This package exposes Zod schemas plus inferred TypeScript types. The API uses them for runtime validation; the frontend uses them for compile-time safety and message handling.
+
+\subsubsection{Configuration Management}
+
+Secrets are environment-driven. The PoC needs variables such as \texttt{VITE\_API\_URL} and \texttt{EXPORT\_SERVICE\_URL}, while the production architecture expects LLM keys, database URLs, and session secrets to live in environment variables or a secret manager. \texttt{.env} files are ignored and \texttt{.env.example} documents the required keys.
+
+\subsubsection{Testing Structure}
+
+Tests sit next to source where practical:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item \texttt{packages/shared/src/index.test.ts} for contract tests;
+    \item \texttt{apps/api/src/app.test.ts} for API integration tests;
+    \item \texttt{services/export-api/test\_main.py} for FastAPI export-worker tests.
+\end{itemize}
+
+Planned test layers include unit tests for prompt selection and permission policy, integration tests for REST contracts and repository behavior, and end-to-end tests for multi-user collaboration plus AI suggestion UX. AI integration is tested through deterministic provider stubs plus a mock-provider path so local and CI runs do not require paid API calls. Export integration is split cleanly: the Node.js API tests the proxy contract, while the Python worker tests binary rendering behavior directly.
+
+\subsection{Data Model}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{data-model.pdf}
+    \caption{Entity-relationship diagram for the target data model.}
+    \label{fig:data-model}
+\end{figure}
+
+The document aggregate stores more than content: ownership, current version, timestamps, permissions, immutable versions, and AI interaction history. This is necessary because the product needs accountability, not just raw text storage. Three modeling decisions are especially consequential:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item version history is immutable, so revert creates a new version rather than deleting old ones;
+    \item AI interactions keep both source and suggested text so reviewers can compare and audit;
+    \item permissions support users, teams, and link sharing even though the PoC currently implements user principals only.
+\end{itemize}
+
+\subsection{Architecture Decision Records}
+
+\subsubsection{ADR-01: Monorepo with Shared Contract Package}
+
+\begin{itemize}[leftmargin=1.3em]
+    \item \textbf{Status:} Accepted
+    \item \textbf{Context:} Web, API, and realtime flows evolve together. Schema drift would slow the team and break demos.
+    \item \textbf{Decision:} Keep frontend, backend, and shared contracts in one repository and publish DTOs through an internal workspace package.
+    \item \textbf{Consequences:} Faster cross-layer changes, easier traceability, and a single CI pipeline. The trade-off is a larger repository and less independent deployment freedom.
+    \item \textbf{Alternatives considered:} Separate repos for web and backend were rejected because every API change would require cross-repo synchronization and duplicate type definitions.
+\end{itemize}
+
+\subsubsection{ADR-02: REST for CRUD plus WebSocket for Collaboration}
+
+\begin{itemize}[leftmargin=1.3em]
+    \item \textbf{Status:} Accepted
+    \item \textbf{Context:} The system needs both strongly testable CRUD contracts and low-latency live editing.
+    \item \textbf{Decision:} Use REST for explicit resource operations and WebSocket for presence plus content propagation.
+    \item \textbf{Consequences:} Better UX and clearer boundaries, at the cost of maintaining two communication paths. That complexity is justified by the top-ranked latency driver.
+    \item \textbf{Alternatives considered:} Polling was rejected because it increases latency and server load. An all-WebSocket design was rejected because it complicates auditable CRUD and testing.
+\end{itemize}
+
+\subsubsection{ADR-03: AI Suggestions Are Proposals, Not Immediate Mutations}
+
+\begin{itemize}[leftmargin=1.3em]
+    \item \textbf{Status:} Accepted
+    \item \textbf{Context:} Direct AI mutation is fast to implement but reduces user trust and complicates collaboration recovery.
+    \item \textbf{Decision:} AI writes suggestion records that users explicitly apply or reject.
+    \item \textbf{Consequences:} Safer collaboration, easier auditing, and clearer version history. The trade-off is one extra interaction step for the user.
+    \item \textbf{Alternatives considered:} Instant inline replacement was rejected because it hides AI provenance and increases accidental destructive edits.
+\end{itemize}
+
+\subsubsection{ADR-04: Repository Abstraction with In-Memory PoC Adapter}
+
+\begin{itemize}[leftmargin=1.3em]
+    \item \textbf{Status:} Accepted
+    \item \textbf{Context:} The assignment requires a running PoC now, but the semester project will outgrow in-memory state quickly.
+    \item \textbf{Decision:} Implement the PoC against an in-memory repository that already matches the future service and aggregate boundaries.
+    \item \textbf{Consequences:} The demo remains lightweight while preserving a clean migration path to PostgreSQL and Redis later. The trade-off is that the PoC does not validate production persistence or multi-instance coordination yet.
+    \item \textbf{Alternatives considered:} Hardwiring state directly inside route handlers was rejected because it would not scale architecturally or align with the report.
+\end{itemize}

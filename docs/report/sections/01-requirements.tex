@@ -1,0 +1,154 @@
+\section{Requirements Engineering}
+
+\subsection{Stakeholder Analysis}
+
+\begin{longtblr}[
+  caption = {Stakeholder analysis},
+  label = {tab:stakeholders}
+]{
+  width = \textwidth,
+  colspec = {X[1.3,l] X[2.1,l] X[2.0,l] X[2.6,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Stakeholder & Goals & Concerns & Influence on Requirements \\
+Startup founders / product owner & Ship a credible, easy-to-use MVP quickly, differentiate through AI, and keep operating cost under control & Weak UX, slow delivery, privacy incidents, and runaway AI spend can damage adoption and margin & Drives MVP-first scope, meaningful AI value, graceful degradation when AI is unavailable, and cost-aware model strategy \\
+Team leads / document owners & Coordinate contributors, preserve quality, review changes, and recover from mistakes & Unclear ownership, accidental overwrites, weak version history, and no accountability for AI edits & Drives versioning, revert workflows, tracked AI interactions, and owner-managed sharing controls \\
+Data security and privacy team & Protect sensitive content during editing, storage, sharing, and AI processing & Weak permission checks, insecure sessions, excessive AI context, unsafe retention, and policy-violating prompts & Drives backend-enforced authorization, scoped AI context, encryption, retention limits, request validation, and timeout behavior \\
+Organization IT administrators & Manage users, onboarding and offboarding, and workspace-wide sharing plus AI policy at scale & Over-permissive sharing, stale sessions after removal, incorrect role assignment, and weak auditability & Drives RBAC, centralized permission management, session revocation expectations, link-sharing policy, and audit-trail requirements \\
+DevOps / platform operations & Keep the platform stable, observable, and scalable under bursts of realtime collaboration and AI traffic & WebSocket fan-out saturation, edit storms, AI backlog spillover, and poor incident visibility & Drives latency and availability targets, rate limiting, structured logs, metrics, tracing, and isolation of AI or export workers from core editing \\
+Developers / maintainers & Build features in parallel, keep contracts stable, and test safely & Tight coupling between web and API, schema drift, and merge conflicts across features & Drives the monorepo choice, shared contract package, module decomposition, ADRs, and automated testing strategy \\
+\end{longtblr}
+
+\subsection{Functional Requirements}
+
+The functional specification is organized around the four capability areas from the brief: real-time collaboration, AI writing assistance, document management, and user management. Each requirement below includes a unique identifier, the triggering condition, expected system behavior, and acceptance criteria.
+
+\begin{landscape}
+\footnotesize
+\begin{longtblr}[
+  caption = {Functional requirements specification},
+  label = {tab:functional-requirements}
+]{
+  width = \linewidth,
+  colspec = {X[1.1,l] X[0.8,l] X[1.0,l] X[2.1,l] X[1.5,l] X[2.3,l] X[2.2,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Area & ID & Level & Description & Trigger & Expected system behavior & Acceptance criteria \\
+Real-time collaboration & COLL-1 & Capability & The system shall support synchronous multi-user editing of the same document. & Two or more authorized collaborators open the same document. & The system establishes a shared editing session and keeps participants on the latest committed content version. & Two browsers connected to the same document see the same latest content after each committed update. \\
+Real-time collaboration & COLL-1.1 & Sub-requirement & The system shall propagate collaborator edits to active participants through push-based communication. & An editor submits a live document change. & The server validates access, stores the new content, increments the version, and broadcasts the update to the session. & An edit made by User A appears for User B without page refresh and includes an updated version number. \\
+Real-time collaboration & COLL-1.2 & Sub-requirement & The system shall expose presence awareness showing who is currently in the document and each user's latest cursor index. & A participant joins, leaves, or moves their cursor. & The system updates session presence and broadcasts the current participant list. & Active participants can identify who is online and see cursor positions update in the shared session. \\
+Real-time collaboration & COLL-1.3 & Sub-requirement & The system shall detect stale edits and prevent silent overwrite when a change is based on an out-of-date version. & A client submits an edit with a stale base version. & The server rejects the mutation, returns a conflict error, and the client refreshes to the latest snapshot. & A stale update returns \texttt{VERSION\_CONFLICT} and the client can recover by reloading the latest state. \\
+AI writing assistant & AI-1 & Capability & The system shall provide role-aware AI assistance for rewriting, summarizing, translating, and restructuring selected text. & An authorized user invokes an AI feature. & The system validates AI permissions, captures scoped context, records the request, and returns a suggestion asynchronously. & An authorized user can request any supported AI feature and receive a persisted suggestion record. \\
+AI writing assistant & AI-1.1 & Sub-requirement & The system shall invoke AI against the user's explicit selection range rather than defaulting to the full document. & A user highlights text and clicks an AI action. & The server extracts the selected content and stores the selection metadata with the interaction. & The persisted AI interaction includes \texttt{selection.start}, \texttt{selection.end}, and the captured source text. \\
+AI writing assistant & AI-1.2 & Sub-requirement & The system shall present AI output as a proposal rather than mutating the document immediately. & An AI job completes. & The client receives a completed suggestion event and displays the proposed text in the AI panel. & The document content remains unchanged until the user explicitly applies the suggestion. \\
+AI writing assistant & AI-1.3 & Sub-requirement & The system shall let users apply or reject completed AI suggestions and record the resulting status. & A user clicks apply or reject on a completed suggestion. & The system updates the interaction status to \texttt{applied}, \texttt{partially\_applied}, or \texttt{rejected}, and versions the document if content changes. & Applying a suggestion creates a new document version; rejecting it updates the interaction without changing content. \\
+AI writing assistant & AI-1.4 & Sub-requirement & The system shall show the user the exact scoped text or cursor context about to be sent to the AI before submission. & A user selects text, moves the cursor, or changes the target language before invoking AI. & The client previews the active selection or cursor context and the destination language before dispatching the request. & The UI shows bounds or cursor position plus a text preview that matches the persisted \texttt{sourceText} stored with the AI interaction. \\
+Document management & DOC-1 & Capability & The system shall manage the full document lifecycle including creation, loading, versioning, sharing, and export readiness. & A user creates, opens, shares, or revisits a document. & The system persists the document aggregate and enforces its access policy consistently. & Authorized users can create and reopen documents; unauthorized users cannot access them. \\
+Document management & DOC-1.1 & Sub-requirement & The system shall allow authorized users to create and load documents through concrete API contracts. & A user submits a new document or opens an existing one. & The API returns structured document data matching the shared schema. & \texttt{POST /v1/documents} returns a document with ID, timestamps, permissions, versions, and AI-history arrays. \\
+Document management & DOC-1.2 & Sub-requirement & The system shall maintain a version history for every persisted content mutation. & A document is edited, reverted, or updated through AI apply. & The server stores a new immutable version record with author, reason, and timestamp. & \texttt{GET /v1/documents/:id/versions} returns the ordered version history including reason metadata. \\
+Document management & DOC-1.3 & Sub-requirement & The system shall allow owners to share a document with role-specific permissions and AI-enablement flags. & An owner updates sharing settings. & The server updates or creates a permission grant for the selected principal. & A share request changes the target principal's role and AI access without affecting other grants. \\
+Document management & DOC-1.4 & Sub-requirement & The system shall support export to PDF, DOCX, and Markdown in the target architecture. & A user chooses an export format. & The system produces a point-in-time document snapshot in the requested format. & Export requests produce a downloadable artifact with the selected version and optional tracked AI changes. \\
+User management & USER-1 & Capability & The system shall authenticate users, maintain sessions, and enforce role-based authorization at the document level. & A user logs in or attempts a protected action. & The system resolves the caller identity, session, and document-specific permission before executing the request. & Protected endpoints reject missing or invalid sessions with \texttt{UNAUTHORIZED} or \texttt{FORBIDDEN}. \\
+User management & USER-1.1 & Sub-requirement & The system shall create time-bounded sessions after successful authentication. & A valid user logs in. & The system issues a session token with an expiry timestamp and binds it to the user. & \texttt{POST /v1/auth/login} returns a token, user ID, and expiry timestamp. \\
+User management & USER-1.2 & Sub-requirement & The system shall enforce the roles \texttt{owner}, \texttt{editor}, \texttt{commenter}, and \texttt{viewer} with different action permissions. & A user attempts to edit, revert, share, or invoke AI. & The policy layer checks the caller's role and AI flag before allowing the action. & Viewers cannot edit, commenters cannot mutate content, and only owners can change sharing. \\
+User management & USER-1.3 & Sub-requirement & The system shall make AI access independently configurable from edit permissions. & An owner or admin changes document AI policy. & The permission grant stores \texttt{allowAi} separately from the document role. & A commenter with \texttt{allowAi=true} can request AI suggestions while remaining unable to edit document content directly. \\
+\end{longtblr}
+\normalsize
+\end{landscape}
+
+\subsection{Non-Functional Requirements}
+
+\begin{longtblr}[
+  caption = {Non-functional requirements},
+  label = {tab:nfrs}
+]{
+  width = \textwidth,
+  colspec = {X[0.9,l] X[1.2,l] X[2.6,l] X[2.2,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+ID & Attribute & Measurable requirement & Justification \\
+NFR-LAT-1 & Latency & Keystroke propagation between active collaborators shall be visible within 250\,ms p95 inside the same region. & Longer delay breaks the feeling of co-presence and makes simultaneous editing feel unsafe. \\
+NFR-LAT-2 & Latency & AI response initiation shall return an accepted request or quota/error result within 1.5\,s p95. & Users should know quickly whether the AI request is queued, denied, or failed. \\
+NFR-LAT-3 & Latency & Opening a document under 1\,MB shall show the first interactive editor state within 2.0\,s p95 on broadband. & Shared editing must feel immediate enough for drafting sessions and classroom demos. \\
+NFR-SCALE-1 & Scalability & The target architecture shall support 50 concurrent editors per document. The PoC validates contracts rather than that scale target. & Shared planning documents often involve workshops or live review sessions. \\
+NFR-SCALE-2 & Scalability & The target architecture shall support 25{,}000 concurrently open documents system-wide and horizontal growth of stateless web/API nodes. & Growth should come from adding nodes instead of re-architecting session flow. \\
+NFR-COST-1 & Cost efficiency & AI usage shall be bounded by configurable quotas and model-tier selection so spend can be capped per tenant, environment, or demo deployment. & Founders and operators need predictable operating cost as AI usage scales. \\
+NFR-AVL-1 & Availability & Target service availability shall be 99.9\% monthly excluding planned maintenance. & The product is a collaboration tool and should be dependable during working hours. \\
+NFR-AVL-2 & Availability & During partial AI-service outage, core editing, sharing, and version history shall remain available while AI actions degrade to retryable errors. & AI is important but must not take down the editor itself. \\
+NFR-OPS-1 & Observability & The system shall emit structured logs and core metrics for authentication, document loads, version conflicts, active realtime sessions, export requests, and AI lifecycle events. & Realtime collaboration and async AI failures are difficult to diagnose without first-class telemetry. \\
+NFR-SEC-1 & Security and privacy & All traffic shall use TLS in transit, and document content plus AI logs shall be encrypted at rest in the production architecture. & Documents may contain sensitive project plans, legal drafts, or internal strategy. \\
+NFR-SEC-2 & Security and privacy & AI requests shall send only the minimum scoped text and prompt metadata required for the feature; default retention for raw AI logs shall not exceed 30 days. & Minimizing third-party exposure reduces compliance risk and cost. \\
+NFR-SEC-3 & Security and privacy & Secrets, API keys, and database credentials shall never be committed to source control and must be injected through environment configuration. & This is a baseline control and also essential for team collaboration. \\
+NFR-USAB-1 & Usability & When a large document has many active collaborators, the UI shall collapse detailed cursor data into a summarized presence bar after 10 visible users. & The editor must remain readable rather than overwhelmed by indicators. \\
+NFR-USAB-2 & Usability & The web client shall satisfy WCAG 2.1 AA contrast for primary text and interactive controls and remain usable by keyboard alone. & Collaboration tools are used across varied devices and accessibility needs. \\
+\end{longtblr}
+
+\subsection{User Stories and Scenarios}
+
+\begin{longtblr}[
+  caption = {User stories and expected behavior},
+  label = {tab:user-stories}
+]{
+  width = \textwidth,
+  colspec = {X[0.7,l] X[2.2,l] X[2.8,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+ID & User story & Expected behavior / design choice \\
+US-01 & As an editor, I want my changes to appear for collaborators while I type so that we can draft together. & Live changes travel over the real-time session and update the shared version immediately after validation. \\
+US-02 & As an editor, I want to recover gracefully if someone else changed the same paragraph before my update landed. & The client receives \texttt{VERSION\_CONFLICT}, reloads the latest snapshot, and the user can continue from the current shared state. \\
+US-03 & As a collaborator, I want to see who is online and where their cursor is so that coordination feels natural. & Presence pills show active users and their latest cursor index in the current document. \\
+US-04 & As a user who went offline mid-edit, I want the session to reconnect automatically when connectivity returns. & The client re-establishes the WebSocket session, reloads the latest document snapshot, and rejoins presence. \\
+US-05 & As a writer, I want to select a paragraph and ask the AI for a summary so that I can create an executive brief quickly. & AI requests are scoped to the selection, previewed before submission, and returned as proposals in the side panel. \\
+US-06 & As a writer, I want to translate a section into another language so that I can prepare localized versions of the draft. & The translation request includes the target language and returns a persisted suggestion for later apply or reject. \\
+US-07 & As a writer, I want to partially accept an AI-generated rewrite so that I stay in control of the final phrasing. & The target architecture supports partial merge and records \texttt{partially\_applied}; the PoC exposes full apply and the supporting status model. \\
+US-08 & As a team lead, I want to revert a document to a previous version while others are editing so that I can undo a bad change quickly. & Revert creates a new top-of-history version rather than deleting history, and the resulting content is pushed to active collaborators. \\
+US-09 & As a document owner, I want to share a document with read-only access so that stakeholders can review without changing content. & Sharing creates or updates a permission grant with role \texttt{viewer}. \\
+US-10 & As a team lead, I want to review AI interaction history so that I understand how a section evolved. & AI requests and their statuses remain attached to the document for later inspection. \\
+US-11 & As a commenter, I want to invoke AI without editing the raw document so that I can propose wording changes safely. & AI access is separated from edit access through the \texttt{allowAi} flag. \\
+US-12 & As a viewer, I want the UI to stop me from editing gracefully so that I understand my role without trial-and-error. & The editor becomes read-only and the UI explains why content is locked. \\
+\end{longtblr}
+
+\subsection{Requirements Traceability Matrix}
+
+\begin{longtblr}[
+  caption = {Traceability matrix from user stories to requirements and architecture},
+  label = {tab:traceability}
+]{
+  width = \textwidth,
+  colspec = {X[0.8,l] X[1.4,l] X[2.8,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+User story & Functional requirements & Architecture components \\
+US-01 & COLL-1, COLL-1.1 & Web editor, realtime gateway, document service \\
+US-02 & COLL-1.3, DOC-1.2 & Web editor, realtime gateway, document service, document store \\
+US-03 & COLL-1.2 & Presence UI, realtime gateway \\
+US-04 & COLL-1, USER-1.1 & Session manager, realtime gateway, auth middleware \\
+US-05 & AI-1, AI-1.1, AI-1.2, AI-1.4 & AI panel, application API, AI orchestrator \\
+US-06 & AI-1, AI-1.1 & AI panel, application API, AI orchestrator \\
+US-07 & AI-1.3, DOC-1.2 & AI panel, document service, document store \\
+US-08 & DOC-1.2, COLL-1.1 & Version-history UI, application API, document service, realtime gateway \\
+US-09 & DOC-1.3, USER-1.2 & Sharing UI, application API, permission policy \\
+US-10 & AI-1.3, DOC-1.2 & AI history panel, document store, application API \\
+US-11 & USER-1.3, AI-1 & Permission policy, AI orchestrator, AI panel \\
+US-12 & USER-1.2 & Web editor, permission policy \\
+\end{longtblr}
