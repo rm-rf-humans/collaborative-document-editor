@@ -1,24 +1,70 @@
-C4Component
-    title CollabWrite Application API Components
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#F7F2E8",
+    "primaryTextColor": "#183230",
+    "primaryBorderColor": "#2E615D",
+    "lineColor": "#527A76",
+    "secondaryColor": "#EDF4F2",
+    "tertiaryColor": "#FFF8F0",
+    "background": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "nodeSpacing": 35,
+    "rankSpacing": 54
+  }
+}}%%
+flowchart LR
+    web["Web App and Realtime Clients"]:::external
+    db[("Repository Adapter<br/>PostgreSQL target / in-memory PoC")]:::storage
+    llm["LLM Provider"]:::external
+    hub["Realtime Gateway"]:::external
 
-    Container_Boundary(api, "Application API") {
-        Component(restRoutes, "REST Routes", "Express routers", "Owns HTTP contracts for auth, documents, versions, sharing, and AI operations.")
-        Component(authMiddleware, "Auth Middleware", "Bearer-token session resolver", "Authenticates requests and attaches caller context.")
-        Component(documentService, "Document Service", "Domain service", "Applies document mutations, versioning, sharing rules, and AI suggestion application.")
-        Component(policyEngine, "Permission Policy", "Role + AI gating rules", "Determines whether a user may read, edit, share, revert, or invoke AI.")
-        Component(aiOrchestrator, "AI Orchestrator", "Async suggestion workflow", "Queues AI work, selects prompt templates, and publishes completed suggestions.")
-        Component(realtimeHub, "Collaboration Hub", "WebSocket broadcaster", "Tracks presence, propagates shared edits, and emits AI completion events.")
-        Component(documentRepository, "Document Repository", "Repository adapter", "Persists documents, sessions, versions, permissions, and AI history.")
-        Component(sharedContracts, "Shared Contracts", "Zod DTO package", "Runtime validation and shared request/response schemas.")
-    }
+    subgraph api["Application API Component View"]
+        direction LR
 
-    Rel(restRoutes, authMiddleware, "Uses")
-    Rel(restRoutes, documentService, "Calls")
-    Rel(restRoutes, aiOrchestrator, "Calls")
-    Rel(documentService, policyEngine, "Evaluates access rules")
-    Rel(documentService, documentRepository, "Reads/writes aggregates")
-    Rel(aiOrchestrator, documentService, "Reads scoped content and records interactions")
-    Rel(aiOrchestrator, documentRepository, "Persists queued/completed AI work")
-    Rel(realtimeHub, documentService, "Applies live edits and reads snapshots")
-    Rel(restRoutes, realtimeHub, "Pushes non-socket mutations to active collaborators")
-    Rel(restRoutes, sharedContracts, "Validates payloads")
+        subgraph edge["Request Edge"]
+            direction TB
+            routes["REST Routers<br/>Express route modules"]:::component
+            auth["Auth Guard<br/>Bearer token to session context"]:::component
+        end
+
+        subgraph domain["Domain Services"]
+            direction TB
+            docs["Document Service<br/>CRUD, versioning, revert, apply AI suggestions"]:::component
+            policy["Permission Policy<br/>Read, edit, share, revert, and AI authorization"]:::component
+            ai["AI Orchestrator<br/>Queue requests, assemble prompts, record statuses"]:::component
+            prompts["Prompt Template Registry<br/>Feature-specific prompt versions"]:::component
+        end
+
+        subgraph integration["Integration Layer"]
+            direction TB
+            events["Event Publisher<br/>Document-updated and AI-completed notifications"]:::component
+            contracts["Shared Contracts<br/>Zod schemas and DTO validation"]:::component
+        end
+    end
+
+    web -->|"HTTP requests"| routes
+    routes --> auth
+    auth --> docs
+    auth --> ai
+    docs --> policy
+    ai --> policy
+    docs --> db
+    ai --> prompts
+    ai --> db
+    docs --> events
+    ai --> events
+    routes --> contracts
+    ai --> llm
+    events --> hub
+
+    classDef component fill:#EAF4F1,stroke:#2E615D,stroke-width:1.6px,color:#183230;
+    classDef external fill:#F9F4EC,stroke:#A88955,stroke-width:1.4px,color:#3B2D0C;
+    classDef storage fill:#FFF8F0,stroke:#B78452,stroke-width:1.6px,color:#4B3212;
+    style api fill:#FFFFFF,stroke:#2E615D,stroke-width:1.6px,stroke-dasharray: 6 4;
+    style edge fill:#FCF8F2,stroke:#8AA6A2,stroke-width:1.2px,stroke-dasharray: 4 3;
+    style domain fill:#FCF8F2,stroke:#8AA6A2,stroke-width:1.2px,stroke-dasharray: 4 3;
+    style integration fill:#FCF8F2,stroke:#8AA6A2,stroke-width:1.2px,stroke-dasharray: 4 3;
