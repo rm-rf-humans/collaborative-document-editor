@@ -11,7 +11,10 @@ export type DocumentRole = z.infer<typeof documentRoleSchema>;
 export const principalTypeSchema = z.enum(["user", "team", "link"]);
 export type PrincipalType = z.infer<typeof principalTypeSchema>;
 
-export const aiFeatureSchema = z.enum(["rewrite", "summarize", "translate", "restructure"]);
+export const exportFormatSchema = z.enum(["markdown", "pdf", "docx"]);
+export type ExportFormat = z.infer<typeof exportFormatSchema>;
+
+export const aiFeatureSchema = z.enum(["rewrite", "summarize", "translate", "restructure", "proofread", "complete"]);
 export type AiFeature = z.infer<typeof aiFeatureSchema>;
 
 export const aiInteractionStatusSchema = z.enum([
@@ -25,6 +28,9 @@ export const aiInteractionStatusSchema = z.enum([
   "quota_exceeded"
 ]);
 export type AiInteractionStatus = z.infer<typeof aiInteractionStatusSchema>;
+
+export const aiProviderModeSchema = z.enum(["mock", "openai"]);
+export type AiProviderMode = z.infer<typeof aiProviderModeSchema>;
 
 export const selectionRangeSchema = z.object({
   start: z.number().int().nonnegative(),
@@ -83,6 +89,7 @@ export const aiInteractionSchema = z.object({
   suggestedText: z.string(),
   targetLanguage: z.string().min(2).optional(),
   createdAt: isoDateTimeSchema,
+  requestedVersion: z.number().int().positive(),
   completedAt: isoDateTimeSchema.optional(),
   promptTemplateVersion: z.string().min(1),
   model: z.string().min(1),
@@ -193,6 +200,12 @@ export const listPermissionsResponseSchema = z.object({
 });
 export type ListPermissionsResponse = z.infer<typeof listPermissionsResponseSchema>;
 
+export const exportDocumentRequestSchema = z.object({
+  format: exportFormatSchema,
+  includeAiAppendix: z.boolean().default(true)
+});
+export type ExportDocumentRequest = z.infer<typeof exportDocumentRequestSchema>;
+
 export const aiOperationRequestSchema = z.object({
   feature: aiFeatureSchema,
   selection: selectionRangeSchema,
@@ -205,6 +218,20 @@ export const aiOperationResponseSchema = z.object({
   interaction: aiInteractionSchema
 });
 export type AiOperationResponse = z.infer<typeof aiOperationResponseSchema>;
+
+export const aiProviderStatusSchema = z.object({
+  mode: aiProviderModeSchema,
+  live: z.boolean(),
+  fastModel: z.string().min(1),
+  qualityModel: z.string().min(1),
+  message: z.string().min(1)
+});
+export type AiProviderStatus = z.infer<typeof aiProviderStatusSchema>;
+
+export const aiProviderResponseSchema = z.object({
+  provider: aiProviderStatusSchema
+});
+export type AiProviderResponse = z.infer<typeof aiProviderResponseSchema>;
 
 export const listAiInteractionsResponseSchema = z.object({
   interactions: z.array(aiInteractionSchema)
