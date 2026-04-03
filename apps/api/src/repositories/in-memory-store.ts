@@ -116,7 +116,9 @@ export class InMemoryStore {
           currentVersion: document.currentVersion,
           activeCollaboratorCount: document.activeCollaboratorCount,
           callerRole,
-          pendingAiSuggestions: document.aiInteractions.filter((item) => item.status === "completed").length
+          pendingAiSuggestions: document.aiInteractions.filter(
+            (item) => item.status === "completed" && item.requestedVersion === document.currentVersion
+          ).length
         };
       })
       .filter((document): document is DocumentSummary => document !== null)
@@ -308,11 +310,16 @@ export class InMemoryStore {
     feature: AiFeature,
     selection: SelectionRange,
     sourceText: string,
+    metadata: { model: string; promptTemplateVersion: string },
     targetLanguage?: string
   ) {
     const { document } = this.getDocumentForUser(documentId, userId);
     const permission = this.getPermission(document, userId);
     assert(permission?.allowAi, new AppError(403, "AI_NOT_ALLOWED", "Your role cannot invoke the AI assistant here."));
+    assert(
+      selection.start <= document.content.length && selection.end <= document.content.length,
+      new AppError(400, "INVALID_SELECTION", "The AI selection is outside the document bounds.")
+    );
 
     const usage = this.aiUsageCount.get(userId) ?? 0;
     if (usage >= 10) {
@@ -327,8 +334,9 @@ export class InMemoryStore {
         suggestedText: "",
         targetLanguage,
         createdAt: now(),
-        promptTemplateVersion: "v1.2",
-        model: "mock-writer-pro",
+        requestedVersion: document.currentVersion,
+        promptTemplateVersion: metadata.promptTemplateVersion,
+        model: metadata.model,
         quotaConsumed: 0
       };
       document.aiInteractions.unshift(interaction);
@@ -348,8 +356,9 @@ export class InMemoryStore {
       suggestedText: "",
       targetLanguage,
       createdAt: now(),
-      promptTemplateVersion: "v1.2",
-      model: "mock-writer-pro",
+      requestedVersion: document.currentVersion,
+      promptTemplateVersion: metadata.promptTemplateVersion,
+      model: metadata.model,
       quotaConsumed: 1
     };
 
@@ -393,6 +402,14 @@ export class InMemoryStore {
     assert(
       interaction.status === "completed",
       new AppError(409, "AI_NOT_READY", "Only completed AI suggestions can be applied.")
+    );
+    assert(
+      interaction.requestedVersion === document.currentVersion,
+      new AppError(
+        409,
+        "AI_CONTEXT_STALE",
+        "The document changed after this AI suggestion was generated. Reload the latest draft and request a new suggestion."
+      )
     );
 
     const acceptedText = request.acceptedText?.length ? request.acceptedText : interaction.suggestedText;

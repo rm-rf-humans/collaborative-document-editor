@@ -5,19 +5,31 @@ import { InMemoryStore } from "./repositories/in-memory-store.js";
 import { AuthService } from "./services/auth-service.js";
 import { DocumentService } from "./services/document-service.js";
 import { AiService } from "./services/ai-service.js";
+import { createAiProvider } from "./services/create-ai-provider.js";
+import { FastApiExportService, type DocumentExporter } from "./services/export-service.js";
 import { createAuthRouter } from "./routes/auth-routes.js";
 import { createDocumentRouter } from "./routes/document-routes.js";
 import { CollaborationHub } from "./realtime/collaboration-hub.js";
 import { AppError } from "./utils/errors.js";
 
-export function createApplicationContext() {
+export type ApplicationContext = {
+  auth: AuthService;
+  documents: DocumentService;
+  ai: AiService;
+  hub: CollaborationHub;
+  exporter: DocumentExporter;
+};
+
+export function createApplicationContext(): ApplicationContext {
   const store = new InMemoryStore();
   const auth = new AuthService(store);
   const documents = new DocumentService(store);
+  const provider = createAiProvider();
+  const exporter = new FastApiExportService();
   let hub: CollaborationHub | null = null;
 
-  const ai = new AiService(documents, (documentId, interactionId) => {
-    hub?.broadcastAiCompletion(documentId, interactionId);
+  const ai = new AiService(documents, provider, (documentId, interaction) => {
+    hub?.broadcastAiCompletion(documentId, interaction);
   });
 
   hub = new CollaborationHub(auth, documents);
@@ -26,7 +38,8 @@ export function createApplicationContext() {
     auth,
     documents,
     ai,
-    hub
+    hub,
+    exporter
   };
 }
 
@@ -43,7 +56,7 @@ export function createApp(context = createApplicationContext()) {
   });
 
   app.use("/v1", createAuthRouter(context.auth));
-  app.use("/v1", createDocumentRouter(context.auth, context.documents, context.ai, context.hub));
+  app.use("/v1", createDocumentRouter(context.auth, context.documents, context.ai, context.hub, context.exporter));
 
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
     const appError = error instanceof AppError

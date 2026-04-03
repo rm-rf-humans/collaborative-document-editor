@@ -1,54 +1,57 @@
-import type { AiFeature, AiInteraction, SelectionRange } from "@midterm/shared";
+import type { AiFeature, AiInteraction, AiProviderStatus, SelectionRange } from "@midterm/shared";
 import { DocumentService } from "./document-service.js";
+import type { AiProvider } from "./ai-provider.js";
 
 type AiCompletedCallback = (documentId: string, interaction: AiInteraction) => void;
-
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function buildSuggestion(feature: AiFeature, sourceText: string, targetLanguage?: string) {
-  const normalized = sourceText.trim();
-  if (!normalized) {
-    return "No text was selected. Ask the user to highlight a section before invoking the AI assistant.";
-  }
-
-  switch (feature) {
-    case "rewrite":
-      return `${capitalize(normalized.replace(/\s+/g, " "))}. This version tightens the wording, keeps the intent, and makes the section easier to scan.`;
-    case "summarize":
-      return `Summary: ${normalized.split(/[.!?]/).map((segment) => segment.trim()).filter(Boolean).slice(0, 2).join("; ")}.`;
-    case "translate":
-      return `Translated to ${targetLanguage ?? "the requested language"}: ${normalized}`;
-    case "restructure":
-      return normalized
-        .split(/\n+/)
-        .map((line, index) => `${index + 1}. ${line.replace(/^#+\s*/, "").trim()}`)
-        .join("\n");
-    default:
-      return normalized;
-  }
-}
 
 export class AiService {
   constructor(
     private readonly documents: DocumentService,
+    private readonly provider: AiProvider,
     private readonly onCompleted: AiCompletedCallback
   ) {}
 
+  getProviderStatus(): AiProviderStatus {
+    return this.provider.getStatus();
+  }
+
   request(documentId: string, userId: string, feature: AiFeature, selection: SelectionRange, targetLanguage?: string) {
-    const interaction = this.documents.requestAi(documentId, userId, feature, selection, targetLanguage);
+    const metadata = this.provider.getRequestMetadata(feature);
+    const { document, interaction } = this.documents.requestAi(documentId, userId, feature, selection, metadata, targetLanguage);
 
     if (interaction.status === "quota_exceeded") {
       return interaction;
     }
 
-    setTimeout(() => {
-      const suggestion = buildSuggestion(feature, interaction.sourceText, targetLanguage);
-      const completedInteraction = this.documents.completeAi(documentId, interaction.id, suggestion, "completed");
-      this.onCompleted(documentId, completedInteraction);
-    }, 1200);
+    void this.completeQueuedInteraction(documentId, document.title, document.content, interaction, targetLanguage);
 
     return interaction;
+  }
+
+  private async completeQueuedInteraction(
+    documentId: string,
+    documentTitle: string,
+    documentContent: string,
+    interaction: AiInteraction,
+    targetLanguage?: string
+  ) {
+    try {
+      const suggestion = await this.provider.generateSuggestion({
+        feature: interaction.feature,
+        documentTitle,
+        documentContent,
+        selection: interaction.selection,
+        sourceText: interaction.sourceText,
+        targetLanguage
+      });
+      const completedInteraction = this.documents.completeAi(documentId, interaction.id, suggestion.suggestedText, "completed");
+      this.onCompleted(documentId, completedInteraction);
+    } catch (error) {
+      const message = error instanceof Error
+        ? `The AI provider failed to complete this request: ${error.message}`
+        : "The AI provider failed to complete this request.";
+      const failedInteraction = this.documents.completeAi(documentId, interaction.id, message, "failed");
+      this.onCompleted(documentId, failedInteraction);
+    }
   }
 }
