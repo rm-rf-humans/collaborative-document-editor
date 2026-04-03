@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  exportDocumentRequestSchema,
   selectionToText,
   shareDocumentRequestSchema,
   selectionRangeSchema
@@ -23,5 +24,13 @@ describe("@midterm/shared", () => {
 
   it("rejects an invalid selection range", () => {
     expect(() => selectionRangeSchema.parse({ start: 10, end: 4 })).toThrow();
+  });
+
+  it("defaults export requests to include the AI appendix", () => {
+    const parsed = exportDocumentRequestSchema.parse({
+      format: "pdf"
+    });
+
+    expect(parsed.includeAiAppendix).toBe(true);
   });
 });
