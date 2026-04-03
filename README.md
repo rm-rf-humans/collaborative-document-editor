@@ -7,6 +7,12 @@
 - a shared contract package using Zod for end-to-end schema alignment
 - architecture diagrams, ADRs, requirements, project-management artifacts, and a full LaTeX report in `docs/report`
 
+
+https://github.com/user-attachments/assets/bdf277a1-e5bf-4419-be5e-17b61e9fefd3
+
+
+
+
 ## Repository Layout
 
 ```text
