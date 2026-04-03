@@ -2,51 +2,77 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
-import { marked } from "marked";
 
 const root = process.cwd();
-const markdownPath = path.join(root, "docs", "report", "report.md");
-const htmlPath = path.join(root, "docs", "report", "report.html");
-const pdfPath = path.join(root, "docs", "report", "report.pdf");
-const cssPath = path.join(root, "docs", "report", "report.css");
+const diagramsDir = path.join(root, "docs", "diagrams");
+const renderedDir = path.join(diagramsDir, "rendered");
+const reportDir = path.join(root, "docs", "report");
+const mermaidConfigPath = path.join(diagramsDir, "puppeteer-config.json");
 
-marked.setOptions({
-  gfm: true
-});
+const diagrams = [
+  "system-context",
+  "container",
+  "backend-components",
+  "data-model"
+];
 
-const markdown = fs.readFileSync(markdownPath, "utf8");
-const htmlBody = marked.parse(markdown);
-const htmlDocument = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CollabWrite Midterm Report</title>
-    <link rel="stylesheet" href="./report.css" />
-  </head>
-  <body>
-    ${htmlBody}
-  </body>
-</html>
-`;
+fs.mkdirSync(renderedDir, { recursive: true });
 
-fs.writeFileSync(htmlPath, htmlDocument, "utf8");
-console.log(`Wrote ${path.relative(root, htmlPath)}`);
+for (const diagram of diagrams) {
+  const inputPath = path.join(diagramsDir, `${diagram}.mmd`);
+  const pdfPath = path.join(renderedDir, `${diagram}.pdf`);
+  const svgPath = path.join(renderedDir, `${diagram}.svg`);
 
-if (process.argv.includes("--pdf")) {
-  const chromeBinary = process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
   execFileSync(
-    chromeBinary,
+    "npx",
     [
-      "--headless",
-      "--disable-gpu",
-      "--no-sandbox",
-      `--print-to-pdf=${pdfPath}`,
-      `file://${htmlPath}`
+      "-y",
+      "@mermaid-js/mermaid-cli",
+      "-p",
+      mermaidConfigPath,
+      "-i",
+      inputPath,
+      "-o",
+      pdfPath
     ],
     {
       stdio: "inherit"
     }
   );
-  console.log(`Wrote ${path.relative(root, pdfPath)}`);
+
+  execFileSync(
+    "npx",
+    [
+      "-y",
+      "@mermaid-js/mermaid-cli",
+      "-p",
+      mermaidConfigPath,
+      "-i",
+      inputPath,
+      "-o",
+      svgPath
+    ],
+    {
+      stdio: "inherit"
+    }
+  );
+
+  console.log(`Rendered ${path.relative(root, pdfPath)} and ${path.relative(root, svgPath)}`);
 }
+
+execFileSync(
+  "tectonic",
+  [
+    "-X",
+    "compile",
+    "report.tex",
+    "--outdir",
+    "."
+  ],
+  {
+    cwd: reportDir,
+    stdio: "inherit"
+  }
+);
+
+console.log(`Wrote ${path.relative(root, path.join(reportDir, "report.pdf"))}`);

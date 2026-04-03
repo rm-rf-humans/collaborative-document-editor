@@ -1,0 +1,97 @@
+\section{Project Management and Team Collaboration}
+
+\subsection{Team Structure and Ownership}
+
+\begin{longtblr}[
+  caption = {Team structure and ownership model},
+  label = {tab:team-ownership}
+]{
+  width = \textwidth,
+  colspec = {X[1.1,l] X[1.4,l] X[2.4,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Team member role & Ownership area & Responsibilities \\
+Ahmed Aymna --- Backend / integration lead & \texttt{apps/api}, shared contracts, final integration & REST contracts, auth, sharing, versioning, export integration, cross-module merge resolution, and submission readiness \\
+Aya --- Frontend / UX lead & \texttt{apps/web}, demo UX, interaction design & Editor UX, presence visualization, sharing and export affordances, AI-panel interaction flow, and demo polish \\
+Mohamed Ibrahim --- Requirements / architecture lead & Requirements engineering, architecture narrative, report traceability & Stakeholder analysis, functional and non-functional requirements, user stories, traceability, and report consistency across sections \\
+Praveen Anilkumar Shukla --- Realtime / AI / platform lead & \texttt{apps/api/realtime}, AI orchestration, environment setup & Realtime session behavior, observability, AI workflow coordination, provider integration boundaries, and runtime environment setup \\
+\end{longtblr}
+
+Features that span ownership, such as AI-assisted editing, are delivered through one cross-functional issue with explicit subtasks per owner and one designated integrator. Ahmed Aymna acts as the final integrator for submission branches, while Mohamed Ibrahim owns consistency between implemented behavior and the written report. Technical disagreements follow a lightweight ADR or RFC process; unresolved issues escalate to Ahmed Aymna plus one additional cross-area reviewer within 24 hours.
+
+\subsection{Development Workflow}
+
+\begin{itemize}[leftmargin=1.3em]
+    \item \textbf{Branching strategy:} short-lived feature branches from \texttt{main}, named \texttt{feat/<scope>-<ticket>}, \texttt{fix/<scope>-<ticket>}, or \texttt{docs/<scope>-<ticket>}.
+    \item \textbf{Merge policy:} pull requests only; no direct pushes to \texttt{main}; squash merge after review.
+    \item \textbf{Code review:} at least one approving review from the owning area and one cross-area reviewer for shared contracts or cross-cutting features.
+    \item \textbf{Approval criteria:} passing tests, no schema drift, updated docs for new endpoints, and clear rollback behavior for risky changes.
+    \item \textbf{Issue tracking:} backlog items in GitHub Projects or Jira with labels such as \texttt{web}, \texttt{api}, \texttt{ai}, \texttt{realtime}, and \texttt{infra}.
+    \item \textbf{Communication:} Slack or Microsoft Teams for daily coordination; durable decisions are copied into ADRs or issue comments so they do not disappear in chat history.
+\end{itemize}
+
+\subsection{Development Methodology}
+
+The team uses a lightweight Scrum-style methodology with one-week iterations from \textbf{April 5, 2026} through \textbf{May 24, 2026}. Work is prioritized by architectural dependency first and user-visible value second:
+
+\begin{enumerate}[leftmargin=1.4em]
+    \item shared contracts and repository boundaries,
+    \item document CRUD and auth,
+    \item realtime editing and presence,
+    \item AI workflow and quota handling,
+    \item export and hardening.
+\end{enumerate}
+
+Infrastructure, testing, and data-model work are tracked as first-class backlog items with acceptance criteria, not treated as side work.
+
+\subsection{Risk Assessment}
+
+\footnotesize
+\begin{longtblr}[
+  caption = {Project-specific risk register},
+  label = {tab:risk-register}
+]{
+  width = \textwidth,
+  colspec = {X[1.5,l] X[0.8,l] X[1.4,l] X[1.8,l] X[1.8,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Risk & Likelihood & Impact & Mitigation & Contingency \\
+Real-time edit conflicts become too frequent with naive full-document updates & Medium & Users lose trust in collaboration and edits may be overwritten & Move from full-document pushes to OT/CRDT or patch-based operations; add conflict telemetry early & Freeze simultaneous same-region editing and fall back to optimistic locking plus explicit conflict-resolution UI \\
+Third-party AI latency or outages degrade the whole product & High & AI feels broken, but editing must continue & Keep AI asynchronous, decouple through a queue, and surface retryable states & Disable AI features temporarily while preserving editing, sharing, and history \\
+AI cost grows unpredictably with large selections and repeated requests & Medium & Budget overrun or forced throttling & Enforce scoped context, quotas, tenant budget caps, and prompt templates by feature & Reduce available AI features or switch to lower-cost models for non-critical tasks \\
+Schema drift between frontend and backend breaks integration late in the sprint & Medium & Demo failures and lost integration time & Keep shared contracts in a workspace package and test responses against schemas & Temporarily freeze feature work and repair contract mismatches before resuming \\
+Ownership boundaries fail and cross-cutting features merge poorly & Medium & Integration stalls, PRs become large, and bug rates increase & Use clear module ownership, small PRs, and an explicit integrator for cross-functional work & Re-scope the sprint, assign one engineer to integration-only work, and defer lower-priority features \\
+\end{longtblr}
+\normalsize
+
+\subsection{Timeline and Milestones}
+
+\begin{longtblr}[
+  caption = {Semester timeline and milestones},
+  label = {tab:timeline}
+]{
+  width = \textwidth,
+  colspec = {X[0.8,l] X[1.4,l] X[2.8,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Date & Milestone & Acceptance criteria \\
+April 7, 2026 & Contract baseline complete & Shared DTO package exists; login and document CRUD schemas are agreed and reviewed. \\
+April 14, 2026 & Authenticated CRUD slice complete & API serves document create/load/update with auth; integration tests pass. \\
+April 21, 2026 & Realtime collaboration slice complete & Two clients can join the same document, see presence, and receive shared edits under target demo conditions. \\
+April 28, 2026 & Versioning and sharing complete & Version history and owner-managed permission updates work through the UI and API. \\
+May 8, 2026 & AI proposal workflow complete & AI requests queue asynchronously, suggestions appear in the UI, and apply/reject flows persist status correctly. \\
+May 17, 2026 & Hardening sprint complete & README, diagrams, ADRs, risk register, tests, and environment setup are current; demo script is rehearsed. \\
+May 24, 2026 & Final submission candidate & End-to-end demo passes from a fresh clone, the report is exported to PDF, and repository state is submission-ready. \\
+\end{longtblr}

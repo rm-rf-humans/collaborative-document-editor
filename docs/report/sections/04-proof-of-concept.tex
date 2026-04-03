@@ -1,0 +1,84 @@
+\section{Proof of Concept}
+
+\subsection{What the PoC Demonstrates}
+
+The implemented PoC validates the architectural skeleton directly in code:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item a working React frontend in \texttt{apps/web};
+    \item a working Express API in \texttt{apps/api};
+    \item shared Zod contracts in \texttt{packages/shared};
+    \item a dedicated FastAPI export worker in \texttt{services/export-api};
+    \item authenticated document listing and loading;
+    \item document creation, sharing, version history, and revert;
+    \item role-aware AI request, proposal, apply, and reject flow;
+    \item live OpenAI-backed rewrite, summarize, translate, restructure, proofread, and inline-completion workflows with a mock fallback path;
+    \item export of point-in-time document snapshots to PDF, DOCX, and Markdown with an optional AI-history appendix;
+    \item WebSocket presence and live content propagation.
+\end{itemize}
+
+\subsection{What the PoC Intentionally Does Not Implement Yet}
+
+\begin{itemize}[leftmargin=1.3em]
+    \item production identity-provider integration;
+    \item persistent PostgreSQL or Redis infrastructure;
+    \item OT/CRDT-grade merge logic for same-character concurrent edits;
+    \item tenant billing, provider-routing policy, and enterprise governance controls around AI usage.
+\end{itemize}
+
+These omissions are deliberate. The PoC proves the contracts, module boundaries, and communication model without pretending the prototype is already production-ready.
+
+\subsection{Architecture-to-Code Alignment}
+
+\begin{longtblr}[
+  caption = {Architecture-to-code alignment},
+  label = {tab:architecture-alignment}
+]{
+  width = \textwidth,
+  colspec = {X[1.4,l] X[2.6,l]},
+  rowhead = 1,
+  row{1} = {bg=tableheader,fg=white,font=\bfseries},
+  cells = {valign=t},
+  hlines,
+  vlines
+}
+Architecture element & PoC implementation \\
+Web app container & \texttt{apps/web} React client \\
+Application API container & \texttt{apps/api} Express app and route modules \\
+Realtime gateway & \texttt{apps/api/src/realtime/collaboration-hub.ts} \\
+Export rendering worker & \texttt{services/export-api/main.py} FastAPI service for PDF, DOCX, and Markdown \\
+Shared contracts & \texttt{packages/shared/src/index.ts} \\
+Document store & \texttt{apps/api/src/repositories/in-memory-store.ts} as the PoC adapter \\
+AI orchestrator & \texttt{apps/api/src/services/ai-service.ts} with async suggestion completion \\
+\end{longtblr}
+
+\subsection{How to Run the PoC}
+
+Use the root-level commands:
+
+\begin{lstlisting}[style=reportcode,caption={PoC setup and run commands},label={lst:poc-run}]
+npm install
+python3 -m venv .venv-export
+source .venv-export/bin/activate
+python3 -m pip install -r services/export-api/requirements.txt
+npm run dev
+npm run dev:export
+\end{lstlisting}
+
+Frontend: \url{http://localhost:5173} \\
+Backend: \url{http://localhost:4000} \\
+Export worker: \url{http://127.0.0.1:8000}
+
+\subsection{Verification Evidence}
+
+The repository passes the following verification commands:
+
+\begin{itemize}[leftmargin=1.3em]
+    \item \texttt{npm run typecheck}
+    \item \texttt{npm test}
+    \item \texttt{source .venv-export/bin/activate \&\& npm run test:export}
+    \item \texttt{npm run build}
+    \item \texttt{npm run render:report}
+\end{itemize}
+
+The backend was also smoke-tested through live \texttt{curl} requests against \texttt{/health}, \texttt{POST /v1/auth/login}, \texttt{GET /v1/documents}, the authenticated AI-provider status route, and the FastAPI export-renderer health endpoint. The PoC therefore demonstrates a working end-to-end slice rather than a disconnected UI mockup.
