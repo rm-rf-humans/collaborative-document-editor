@@ -1,17 +1,20 @@
 import { startTransition, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   type AiInteraction,
+  type AiProviderStatus,
   type Document,
   type DocumentPermission,
   type DocumentRole,
   type DocumentSummary,
   type DocumentVersion,
+  type ExportFormat,
   type PresenceParticipant,
   type RealtimeMessage,
   type SelectionRange,
   type User
 } from "@midterm/shared";
-import { api } from "./api";
+import { ApiError, api } from "./api";
+import { formatAiCompletionStatus, formatAiRequestSubmitted, previewSelection, roleCanEdit, roleCanManage, roleCanUseAi } from "./app-helpers";
 import { LoginView } from "./components/LoginView";
 import { Sidebar } from "./components/Sidebar";
 import { EditorPanel } from "./components/EditorPanel";
@@ -21,25 +24,8 @@ import "./styles/app.css";
 const sessionStorageKey = "collabwrite-session-token";
 type SocketErrorPayload = { error: { message?: string; code?: string } };
 
-function roleCanEdit(role?: DocumentRole) {
-  return role === "owner" || role === "editor";
-}
-
-function roleCanManage(role?: DocumentRole) {
-  return role === "owner";
-}
-
-function roleCanUseAi(permission?: DocumentPermission) {
-  return Boolean(permission?.allowAi);
-}
-
-function previewSelection(content: string, selection: SelectionRange) {
-  if (selection.start === selection.end) {
-    return "Select text in the editor to invoke AI on a scoped region.";
-  }
-
-  const text = content.slice(selection.start, selection.end).replace(/\s+/g, " ").trim();
-  return `Selected ${selection.end - selection.start} chars: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`;
+function isUnauthorizedError(error: unknown) {
+  return error instanceof ApiError && error.code === "UNAUTHORIZED";
 }
 
 export default function App() {
@@ -52,6 +38,7 @@ export default function App() {
   const [permissions, setPermissions] = useState<DocumentPermission[]>([]);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [aiInteractions, setAiInteractions] = useState<AiInteraction[]>([]);
+  const [aiProvider, setAiProvider] = useState<AiProviderStatus | null>(null);
   const [participants, setParticipants] = useState<PresenceParticipant[]>([]);
   const [selection, setSelection] = useState<SelectionRange>({ start: 0, end: 0 });
   const [socketConnected, setSocketConnected] = useState(false);
@@ -60,6 +47,8 @@ export default function App() {
   const [shareRole, setShareRole] = useState<DocumentRole>("viewer");
   const [shareAllowAi, setShareAllowAi] = useState(false);
   const [aiTargetLanguage, setAiTargetLanguage] = useState("Arabic");
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("pdf");
+  const [includeAiAppendix, setIncludeAiAppendix] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -79,7 +68,24 @@ export default function App() {
   const canEdit = roleCanEdit(currentRole);
   const canManageSharing = roleCanManage(currentRole);
   const canUseAi = roleCanUseAi(currentPermission);
+  const canExport = Boolean(document && sessionToken);
   const selectionLabel = previewSelection(document?.content ?? "", selection);
+  const clearSession = useEffectEvent((message: string) => {
+    window.localStorage.removeItem(sessionStorageKey);
+    setCurrentUser(null);
+    setSessionToken(null);
+    setSelectedDocumentId(null);
+    setDocument(null);
+    setDocuments([]);
+    setPermissions([]);
+    setVersions([]);
+    setAiInteractions([]);
+    setParticipants([]);
+    setAiProvider(null);
+    serverVersionRef.current = 1;
+    serverContentRef.current = "";
+    setStatusMessage(message);
+  });
 
   const refreshDocuments = useEffectEvent(async (token: string, preferredDocumentId?: string | null) => {
     const response = await api.listDocuments(token);
@@ -162,14 +168,14 @@ export default function App() {
         const next = previous.filter((item) => item.id !== payload.interaction.id);
         return [payload.interaction, ...next];
       });
-      setStatusMessage(`AI ${payload.interaction.feature} suggestion is ready.`);
+      setStatusMessage(formatAiCompletionStatus(payload.interaction));
       return;
     }
   });
 
   useEffect(() => {
     api.listUsers()
-      .then((response) => {
+      .then(async (response) => {
         setAvailableUsers(response.users);
         const persistedToken = window.localStorage.getItem(sessionStorageKey);
         if (!persistedToken) {
@@ -177,36 +183,64 @@ export default function App() {
           return;
         }
 
-        setSessionToken(persistedToken);
-        return api.me(persistedToken).then(({ user }) => {
+        try {
+          const { user } = await api.me(persistedToken);
+          setSessionToken(persistedToken);
           setCurrentUser(user);
           setStatusMessage(`Welcome back, ${user.displayName}.`);
-        });
+        } catch (error) {
+          if (isUnauthorizedError(error)) {
+            clearSession("Your previous session expired. Select a user to sign in again.");
+            return;
+          }
+
+          clearSession("Unable to restore the previous session.");
+        }
       })
       .catch(() => {
         setStatusMessage("Unable to load the API. Start the backend before opening the PoC.");
       });
-  }, []);
+  }, [clearSession]);
 
   useEffect(() => {
     if (!sessionToken || !currentUser) {
       return;
     }
 
-    refreshDocuments(sessionToken).catch(() => {
+    api.getAiProvider(sessionToken)
+      .then((response) => {
+        setAiProvider(response.provider);
+      })
+      .catch((error) => {
+        if (isUnauthorizedError(error)) {
+          clearSession("Your session expired. Select a user to sign in again.");
+          return;
+        }
+        setAiProvider(null);
+      });
+
+    refreshDocuments(sessionToken).catch((error) => {
+      if (isUnauthorizedError(error)) {
+        clearSession("Your session expired. Select a user to sign in again.");
+        return;
+      }
       setStatusMessage("Unable to load documents.");
     });
-  }, [currentUser, refreshDocuments, sessionToken]);
+  }, [clearSession, currentUser, refreshDocuments, sessionToken]);
 
   useEffect(() => {
     if (!sessionToken || !selectedDocumentId) {
       return;
     }
 
-    loadWorkspace(sessionToken, selectedDocumentId).catch(() => {
+    loadWorkspace(sessionToken, selectedDocumentId).catch((error) => {
+      if (isUnauthorizedError(error)) {
+        clearSession("Your session expired. Select a user to sign in again.");
+        return;
+      }
       setStatusMessage("Unable to load the selected document.");
     });
-  }, [loadWorkspace, selectedDocumentId, sessionToken]);
+  }, [clearSession, loadWorkspace, selectedDocumentId, sessionToken]);
 
   useEffect(() => {
     if (!sessionToken || !selectedDocumentId) {
@@ -297,27 +331,30 @@ export default function App() {
     }
   };
 
-  const handleCreateDocument = async () => {
+  const handleCreateDocument = async (title: string) => {
     if (!sessionToken) {
-      return;
+      return false;
     }
 
-    const title = window.prompt("Document title", "New collaborative draft");
-    if (!title) {
-      return;
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+      setStatusMessage("Enter a title before creating a document.");
+      return false;
     }
 
     setIsBusy(true);
     try {
       const response = await api.createDocument(sessionToken, {
-        title,
+        title: normalizedTitle,
         content: "Start writing here..."
       });
       await refreshDocuments(sessionToken, response.document.id);
       setSelectedDocumentId(response.document.id);
       setStatusMessage(`Created "${response.document.title}".`);
+      return true;
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Document creation failed.");
+      return false;
     } finally {
       setIsBusy(false);
     }
@@ -343,12 +380,12 @@ export default function App() {
     }
   };
 
-  const handleRequestAi = async (feature: "rewrite" | "summarize" | "translate" | "restructure") => {
+  const handleRequestAi = async (feature: "rewrite" | "summarize" | "translate" | "restructure" | "proofread" | "complete") => {
     if (!sessionToken || !document) {
       return;
     }
 
-    if (selection.start === selection.end) {
+    if (feature !== "complete" && selection.start === selection.end) {
       setStatusMessage("Select some text before invoking the AI assistant.");
       return;
     }
@@ -361,11 +398,38 @@ export default function App() {
       });
       setAiInteractions((previous) => [response.interaction, ...previous]);
       setStatusMessage(response.interaction.status === "quota_exceeded"
-        ? "AI quota exceeded for this user in the PoC."
-        : `AI ${feature} request submitted.`
+        ? "AI quota exceeded for this user."
+        : formatAiRequestSubmitted(feature)
       );
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "AI request failed.");
+    }
+  };
+
+  const handleExportDocument = async () => {
+    if (!sessionToken || !document) {
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const artifact = await api.exportDocument(sessionToken, document.id, {
+        format: exportFormat,
+        includeAiAppendix
+      });
+      const downloadUrl = window.URL.createObjectURL(artifact.blob);
+      const link = window.document.createElement("a");
+      link.href = downloadUrl;
+      link.download = artifact.filename;
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      setStatusMessage(`Exported ${artifact.filename}.`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -452,12 +516,19 @@ export default function App() {
 
           <InspectorPanel
             aiInteractions={aiInteractions}
+            aiProvider={aiProvider}
             aiTargetLanguage={aiTargetLanguage}
             availableUsers={availableUsers.filter((user) => user.id !== currentUser.id)}
+            canExport={canExport && !isBusy}
             canManageSharing={canManageSharing}
             canUseAi={canUseAi}
+            exportFormat={exportFormat}
+            includeAiAppendix={includeAiAppendix}
             onAiTargetLanguageChange={setAiTargetLanguage}
             onApplySuggestion={handleApplySuggestion}
+            onExportDocument={handleExportDocument}
+            onExportFormatChange={setExportFormat}
+            onIncludeAiAppendixChange={setIncludeAiAppendix}
             onRejectSuggestion={handleRejectSuggestion}
             onRequestAi={handleRequestAi}
             onRevertVersion={handleRevertVersion}

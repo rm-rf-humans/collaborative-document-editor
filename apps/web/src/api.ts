@@ -1,8 +1,10 @@
 import {
+  aiProviderResponseSchema,
   authLoginResponseSchema,
   authMeResponseSchema,
   aiOperationResponseSchema,
   documentResponseSchema,
+  exportDocumentRequestSchema,
   listAiInteractionsResponseSchema,
   listDocumentsResponseSchema,
   listPermissionsResponseSchema,
@@ -11,6 +13,7 @@ import {
   type AiOperationRequest,
   type ApplyAiSuggestionRequest,
   type CreateDocumentRequest,
+  type ExportDocumentRequest,
   type RevertDocumentRequest,
   type ShareDocumentRequest,
   type UpdateDocumentContentRequest,
@@ -19,31 +22,95 @@ import {
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 type RequestOptions = {
   method?: string;
   token?: string | null;
   body?: unknown;
 };
 
+type BinaryResponse = {
+  blob: Blob;
+  filename: string;
+  contentType: string;
+};
+
+function buildHeaders(options: Pick<RequestOptions, "token">) {
+  return {
+    "content-type": "application/json",
+    ...(options.token ? { authorization: `Bearer ${options.token}` } : {})
+  };
+}
+
+function parseFilename(contentDisposition: string | null) {
+  if (!contentDisposition) {
+    return "export.bin";
+  }
+
+  const match = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+  return match?.[1] ?? "export.bin";
+}
+
 async function request<T>(path: string, options: RequestOptions = {}, parser: { parse(input: unknown): T }) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: options.method ?? "GET",
-    headers: {
-      "content-type": "application/json",
-      ...(options.token ? { authorization: `Bearer ${options.token}` } : {})
-    },
+    headers: buildHeaders(options),
     body: options.body ? JSON.stringify(options.body) : undefined
   });
 
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error?.message ?? "Request failed");
+    throw new ApiError(
+      payload.error?.message ?? "Request failed",
+      response.status,
+      payload.error?.code
+    );
   }
 
   return parser.parse(payload);
 }
 
+async function requestBinary(path: string, options: RequestOptions = {}): Promise<BinaryResponse> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: options.method ?? "GET",
+    headers: buildHeaders(options),
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const payload = contentType.includes("application/json")
+      ? await response.json()
+      : { error: { message: await response.text() } };
+
+    throw new ApiError(
+      payload.error?.message ?? "Request failed",
+      response.status,
+      payload.error?.code
+    );
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: parseFilename(response.headers.get("content-disposition")),
+    contentType: response.headers.get("content-type") ?? "application/octet-stream"
+  };
+}
+
 export const api = {
+  getAiProvider(token: string) {
+    return request("/v1/ai/provider", { token }, aiProviderResponseSchema);
+  },
   listUsers() {
     return request("/v1/users", {}, listUsersResponseSchema);
   },
@@ -61,6 +128,16 @@ export const api = {
   },
   getDocument(token: string, documentId: string) {
     return request(`/v1/documents/${documentId}`, { token }, documentResponseSchema);
+  },
+  exportDocument(token: string, documentId: string, body: ExportDocumentRequest) {
+    return requestBinary(
+      `/v1/documents/${documentId}/export`,
+      {
+        method: "POST",
+        token,
+        body: exportDocumentRequestSchema.parse(body)
+      }
+    );
   },
   updateDocument(token: string, documentId: string, body: UpdateDocumentContentRequest) {
     return request(
