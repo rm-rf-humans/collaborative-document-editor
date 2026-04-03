@@ -1,10 +1,12 @@
 import { Router } from "express";
 import {
+  aiProviderResponseSchema,
   aiOperationRequestSchema,
   aiOperationResponseSchema,
   applyAiSuggestionRequestSchema,
   createDocumentRequestSchema,
   documentResponseSchema,
+  exportDocumentRequestSchema,
   listAiInteractionsResponseSchema,
   listDocumentsResponseSchema,
   listPermissionsResponseSchema,
@@ -19,16 +21,24 @@ import { CollaborationHub } from "../realtime/collaboration-hub.js";
 import { AiService } from "../services/ai-service.js";
 import { AuthService } from "../services/auth-service.js";
 import { DocumentService } from "../services/document-service.js";
+import type { DocumentExporter } from "../services/export-service.js";
 
 export function createDocumentRouter(
   auth: AuthService,
   documents: DocumentService,
   ai: AiService,
-  hub: CollaborationHub
+  hub: CollaborationHub,
+  exporter: DocumentExporter
 ) {
   const router = Router();
 
   router.use(requireAuth(auth));
+
+  router.get("/ai/provider", (_request, response) => {
+    response.json(aiProviderResponseSchema.parse({
+      provider: ai.getProviderStatus()
+    }));
+  });
 
   router.get("/documents", (request, response) => {
     response.json(listDocumentsResponseSchema.parse({
@@ -46,6 +56,18 @@ export function createDocumentRouter(
     response.json(documentResponseSchema.parse({
       document: documents.getDocument(request.params.documentId, request.auth!.user.id)
     }));
+  });
+
+  router.post("/documents/:documentId/export", async (request, response) => {
+    const body = exportDocumentRequestSchema.parse(request.body);
+    const document = documents.getDocument(request.params.documentId, request.auth!.user.id);
+    const artifact = await exporter.exportDocument(document, body);
+
+    response
+      .setHeader("content-type", artifact.contentType)
+      .setHeader("content-disposition", `attachment; filename="${artifact.filename}"`)
+      .status(200)
+      .send(Buffer.from(artifact.body));
   });
 
   router.put("/documents/:documentId/content", (request, response) => {

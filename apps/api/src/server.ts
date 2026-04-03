@@ -9,4 +9,5 @@ context.hub.attach(server);
 
 server.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);
+  console.log(`AI provider: ${context.ai.getProviderStatus().message}`);
 });
